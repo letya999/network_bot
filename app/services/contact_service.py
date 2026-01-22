@@ -27,7 +27,8 @@ class ContactService:
             follow_up_action=data.get("follow_up_action"),
             raw_transcript=data.get("raw_transcript"),
             status=ContactStatus.ACTIVE.value,
-            osint_data={}
+            osint_data={},
+            attributes=data  # Store full dynamic data found by prompt
         )
         self.session.add(contact)
         await self.session.flush()
@@ -75,6 +76,14 @@ class ContactService:
                 # Avoid overwriting with "Unknown" if we already have a name?
                 # Let handler decide.
                 setattr(contact, k, v)
+        
+        # update attributes if something new is there
+        if contact.attributes is None:
+            contact.attributes = {}
+        # We merge top level keys?
+        current_attrs = dict(contact.attributes) if contact.attributes else {}
+        current_attrs.update(data)
+        contact.attributes = current_attrs
         
         await self.session.commit()
         await self.session.refresh(contact)

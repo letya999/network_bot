@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import Column, String, BigInteger, DateTime, func, JSON
+from sqlalchemy import Column, String, BigInteger, DateTime, func, JSON, Text
 from sqlalchemy.dialects.postgresql import UUID
 from app.db.base import Base
 
@@ -11,5 +11,6 @@ class User(Base):
     name = Column(String(255))
     profile_data = Column(JSON, default={})
     settings = Column(JSON, default={})
+    custom_prompt = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())

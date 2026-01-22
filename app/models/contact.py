@@ -33,6 +33,7 @@ class Contact(Base):
     raw_transcript = Column(Text)
     status = Column(String, default=ContactStatus.ACTIVE.value)
     osint_data = Column(JSONB, default={})
+    attributes = Column(JSONB, default={})
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), onupdate=func.now(), server_default=func.now())
 

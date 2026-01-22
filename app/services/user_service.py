@@ -23,3 +23,13 @@ class UserService:
             await self.session.refresh(user)
         
         return user
+
+    async def update_custom_prompt(self, telegram_id: int, prompt_text: str):
+        stmt = select(User).where(User.telegram_id == telegram_id)
+        result = await self.session.execute(stmt)
+        user = result.scalar_one_or_none()
+        if user:
+            user.custom_prompt = prompt_text
+            await self.session.commit()
+            await self.session.refresh(user)
+        return user

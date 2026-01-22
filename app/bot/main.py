@@ -1,8 +1,11 @@
 import logging
 from telegram import Update, BotCommand
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, TypeHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, TypeHandler, ConversationHandler
 from app.core.config import settings
-from app.bot.handlers import start, handle_voice, handle_contact, list_contacts, find_contact, export_contacts
+from app.bot.handlers import (
+    start, handle_voice, handle_contact, list_contacts, find_contact, export_contacts, handle_text_message,
+    show_prompt, start_edit_prompt, save_prompt, cancel_prompt_edit, reset_prompt, WAITING_FOR_PROMPT
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +64,20 @@ def create_bot():
     app.add_handler(CommandHandler("list", list_contacts))
     app.add_handler(CommandHandler("find", find_contact))
     app.add_handler(CommandHandler("export", export_contacts))
+    app.add_handler(CommandHandler("prompt", show_prompt))
+    app.add_handler(CommandHandler("reset_prompt", reset_prompt))
+    
+    prompt_conv = ConversationHandler(
+        entry_points=[CommandHandler("edit_prompt", start_edit_prompt)],
+        states={
+            WAITING_FOR_PROMPT: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_prompt)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_prompt_edit)]
+    )
+    app.add_handler(prompt_conv)
     
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_message))
     
     return app

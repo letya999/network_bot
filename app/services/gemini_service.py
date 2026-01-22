@@ -32,13 +32,16 @@ class GeminiService:
         except FileNotFoundError:
             return ""
 
-    async def extract_contact_data(self, text: str = None, audio_path: str = None) -> Dict[str, Any]:
+    async def extract_contact_data(self, text: str = None, audio_path: str = None, prompt_template: str = None) -> Dict[str, Any]:
         if not self.model:
             # Fallback for dev/testing if no key? Or raise error.
             print("Warning: GEMINI_API_KEY not set") 
             return {"name": "Test User", "raw_transcript": "No API Key", "notes": "Gemini disabled"}
 
-        prompt_text = self.get_prompt("extract_contact")
+        if prompt_template:
+            prompt_text = prompt_template
+        else:
+            prompt_text = self.get_prompt("extract_contact")
         
         content = [prompt_text]
         

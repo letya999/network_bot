@@ -2,12 +2,14 @@ import os
 import logging
 import time
 from telegram import Update
-from telegram.ext import ContextTypes
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 from app.db.session import AsyncSessionLocal
 from app.services.user_service import UserService
 from app.services.contact_service import ContactService
 from app.services.gemini_service import GeminiService
 from app.services.export_service import ExportService
+from app.utils.text_parser import extract_contact_info
 
 logger = logging.getLogger(__name__)
 
@@ -76,11 +78,15 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await new_file.download_to_drive(file_path)
         
         gemini = GeminiService()
-        data = await gemini.extract_contact_data(audio_path=file_path)
         
         async with AsyncSessionLocal() as session:
             user_service = UserService(session)
             db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
+            
+            # Use custom prompt if set
+            prompt_to_use = db_user.custom_prompt
+            
+            data = await gemini.extract_contact_data(audio_path=file_path, prompt_template=prompt_to_use)
             
             contact_service = ContactService(session)
             
@@ -220,3 +226,118 @@ async def export_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=f"Экспорт {len(contacts)} контактов."
         )
         await status_msg.delete()
+
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    text = update.message.text
+    
+    # Regex Filter: Only process if looks like contact info
+    regex_data = extract_contact_info(text)
+    if not regex_data:
+        return
+
+    logger.info(f"Received text with contact info from user {user.id}. Processing with Gemini...")
+    
+    async with AsyncSessionLocal() as session:
+        user_service = UserService(session)
+        db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
+        
+        # Use Gemini for full extraction
+        gemini = GeminiService()
+        data = await gemini.extract_contact_data(text=text, prompt_template=db_user.custom_prompt)
+        
+        contact_service = ContactService(session)
+        
+        # Merge logic
+        now = time.time()
+        last_voice_time = context.user_data.get("last_voice_time", 0)
+        last_voice_id = context.user_data.get("last_voice_id")
+        
+        contact = None
+        # Scenario: Voice -> Text (Link)
+        if last_voice_id and (now - last_voice_time < 300):
+            contact = await contact_service.update_contact(last_voice_id, data)
+            await update.message.reply_text("🔗 Информация добавлена к последнему контакту!")
+            # We don't clear last_voice_id immediately? Or we do? 
+            # Usually strict pairs, but maybe multiple links?
+            # Let's keep the context open for a bit?
+            # Existing logic in handle_contact pops it. lets follow that for consistency.
+            context.user_data.pop("last_voice_id", None)
+        else:
+            # Scenario: Text (Link) -> pending Voice
+            # Or just a standalone text contact
+            
+            # We might want to add existing notes if any?
+            # data parsing only extracts specific fields.
+            # If the user wrote "Here is his email: bob@example.com and he is a nice guy",
+            # our parser extracts email. The interaction notes could be the full text.
+            data["notes"] = text 
+            
+            contact = await contact_service.create_contact(db_user.id, data)
+            
+            # Set context so next voice can pick this up
+            context.user_data["last_contact_id"] = contact.id
+            context.user_data["last_contact_time"] = now
+            
+            await update.message.reply_text("💾 Контакт сохранен (жду голосовое описание если есть...)")
+
+        card = format_card(contact)
+        await update.message.reply_text(card)
+
+# Prompt Conversation States
+WAITING_FOR_PROMPT = 1
+
+async def show_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    async with AsyncSessionLocal() as session:
+        user_service = UserService(session)
+        db_user = await user_service.get_or_create_user(user.id)
+        
+        prompt = db_user.custom_prompt
+        source = "Custom (Saved in DB)"
+        
+        if not prompt:
+            gemini = GeminiService()
+            prompt = gemini.get_prompt("extract_contact")
+            source = "Default (System)"
+            
+        # Escape markdown chars if needed, or use block code.
+        await update.message.reply_text(
+            f"📜 *Текущий Промпт* ({source}):\n\n"
+            f"```\n{prompt}\n```\n\n"
+            "Используй /edit_prompt чтобы изменить его.\n"
+            "Используй /reset_prompt чтобы сбросить.",
+            parse_mode="Markdown"
+        )
+
+async def start_edit_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "Пришли мне новый текст промпта.\n"
+        "Ты можешь скопировать текущий (/prompt) и отредактировать его.\n"
+        "Отправь /cancel чтобы отменить."
+    )
+    return WAITING_FOR_PROMPT
+
+async def save_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    new_prompt = update.message.text
+    
+    async with AsyncSessionLocal() as session:
+        user_service = UserService(session)
+        await user_service.update_custom_prompt(user.id, new_prompt)
+        
+    await update.message.reply_text("✅ Новый промпт сохранен!")
+    return ConversationHandler.END
+
+async def cancel_prompt_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚫 Редактирование отменено.")
+    return ConversationHandler.END
+
+async def reset_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    async with AsyncSessionLocal() as session:
+        user_service = UserService(session)
+        await user_service.update_custom_prompt(user.id, None) # Set to None
+        
+    await update.message.reply_text("🔄 Промпт сброшен на стандартный.")
+
