@@ -11,16 +11,16 @@ Based on [OpenSpec Specification](context.md).
 - [x] Task 0.6: Базовый Telegram bot + /start handler
 
 ## Phase 1: Core MVP
-- [ ] Task 1.1: GeminiService — транскрипция + extraction
-- [ ] Task 1.2: Промпт для извлечения контакта (итеративно)
-- [ ] Task 1.3: Voice handler — приём и обработка голосовых
-- [ ] Task 1.4: Contact handler — приём TG контактов, vCard
-- [ ] Task 1.5: Merge logic — объединение голос + контакт
-- [ ] Task 1.6: Contact card display + inline keyboard
-- [ ] Task 1.7: ContactService — CRUD операции
-- [ ] Task 1.8: /list handler + пагинация
-- [ ] Task 1.9: /find handler — базовый поиск
-- [ ] Task 1.10: /export handler — CSV экспорт
+- [x] Task 1.1: GeminiService — транскрипция + extraction
+- [x] Task 1.2: Промпт для извлечения контакта (итеративно)
+- [x] Task 1.3: Voice handler — приём и обработка голосовых
+- [x] Task 1.4: Contact handler — приём TG контактов, vCard
+- [x] Task 1.5: Merge logic — объединение голос + контакт
+- [x] Task 1.6: Contact card display + inline keyboard
+- [x] Task 1.7: ContactService — CRUD операции
+- [x] Task 1.8: /list handler + пагинация
+- [x] Task 1.9: /find handler — базовый поиск
+- [x] Task 1.10: /export handler — CSV экспорт
 - [ ] Task 1.11: End-to-end тестирование MVP
 
 ## Phase 2: Profile & Cards
