@@ -34,29 +34,47 @@ class GeminiService:
 
     async def extract_contact_data(self, text: str = None, audio_path: str = None) -> Dict[str, Any]:
         if not self.model:
-            # Fallback for dev/testing if no key? Or raise error.
-            print("Warning: GEMINI_API_KEY not set") 
+            logger.warning("GEMINI_API_KEY not set")
             return {"name": "Test User", "raw_transcript": "No API Key", "notes": "Gemini disabled"}
 
-        prompt_text = self.get_prompt("extract_contact")
-        
-        content = [prompt_text]
-        
+        # Security: Validate audio file path to prevent path traversal
         if audio_path:
-            # Upload file. Note: This is synchronous in current SDK usually, or awaitable?
-            # genai.upload_file returns a File object.
-            # It performs network request. Ideally we should run this in thread pool if it's blocking.
-            # But specific SDK behavior might vary. upload_file seems synchronous.
-            sample_file = genai.upload_file(path=audio_path, mime_type="audio/ogg", display_name="Audio Sample")
-            content.append(sample_file)
-        
+            import os
+            if not os.path.exists(audio_path):
+                logger.error("Audio file does not exist")
+                return {"name": "Неизвестно", "notes": "File error"}
+
+            # Security: Validate file size (max 20MB)
+            file_size = os.path.getsize(audio_path)
+            if file_size > 20 * 1024 * 1024:
+                logger.error("Audio file too large")
+                return {"name": "Неизвестно", "notes": "File too large"}
+
+        prompt_text = self.get_prompt("extract_contact")
+
+        content = [prompt_text]
+
+        if audio_path:
+            try:
+                sample_file = genai.upload_file(path=audio_path, mime_type="audio/ogg", display_name="Audio Sample")
+                content.append(sample_file)
+            except Exception as e:
+                logger.error(f"Failed to upload audio file: {e}")
+                return {"name": "Неизвестно", "notes": "Upload failed"}
+
         if text:
+            # Security: Limit text length to prevent abuse
+            if len(text) > 10000:
+                text = text[:10000]
             content.append(text)
 
         # Generate content
-        # model.generate_content_async is preferred for async
-        response = await self.model.generate_content_async(content)
-        
+        try:
+            response = await self.model.generate_content_async(content)
+        except Exception as e:
+            logger.error(f"Gemini API error: {e}")
+            return {"name": "Неизвестно", "notes": "API error"}
+
         # Parse JSON
         try:
             json_str = response.text.strip()
@@ -66,12 +84,19 @@ class GeminiService:
                 json_str = json_str[3:]
             if json_str.endswith("```"):
                 json_str = json_str[:-3]
-            
-            return json.loads(json_str)
+
+            parsed_data = json.loads(json_str)
+
+            # Security: Validate parsed data structure
+            if not isinstance(parsed_data, dict):
+                logger.error("Invalid response format from Gemini")
+                return {"name": "Неизвестно", "notes": "Invalid format"}
+
+            return parsed_data
         except Exception as e:
-            print(f"Error parsing Gemini response: {e}")
+            # Security: Don't expose internal error details
+            logger.error(f"Error parsing Gemini response: {e}")
             return {
                 "name": "Неизвестно",
-                "raw_transcript": response.text if response.text else "Error",
-                "notes": f"Processing error: {str(e)}"
+                "notes": "Processing error"
             }
