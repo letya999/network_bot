@@ -3,12 +3,12 @@
 Based on [OpenSpec Specification](context.md).
 
 ## Phase 0: Infrastructure
-- [ ] Task 0.1: Инициализация проекта (poetry/pip, структура папок)
-- [ ] Task 0.2: Docker + docker-compose (postgres, redis, app)
-- [ ] Task 0.3: Pydantic settings + .env.example
-- [ ] Task 0.4: SQLAlchemy models + Alembic setup
-- [ ] Task 0.5: Базовый FastAPI app + health check
-- [ ] Task 0.6: Базовый Telegram bot + /start handler
+- [x] Task 0.1: Инициализация проекта (poetry/pip, структура папок)
+- [x] Task 0.2: Docker + docker-compose (postgres, redis, app)
+- [x] Task 0.3: Pydantic settings + .env.example
+- [x] Task 0.4: SQLAlchemy models + Alembic setup
+- [x] Task 0.5: Базовый FastAPI app + health check
+- [x] Task 0.6: Базовый Telegram bot + /start handler
 
 ## Phase 1: Core MVP
 - [ ] Task 1.1: GeminiService — транскрипция + extraction
