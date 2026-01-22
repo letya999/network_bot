@@ -53,12 +53,20 @@ class ContactService:
         return result.scalars().all()
 
     async def find_contacts(self, user_id: uuid.UUID, query_str: str) -> List[Contact]:
-        # Basic search by name or company
+        # Input validation: limit query length and sanitize
+        if not query_str or len(query_str) > 100:
+            return []
+
+        # Sanitize query to prevent SQL injection (escape special chars)
+        sanitized_query = query_str.replace("%", "\\%").replace("_", "\\_")
+
+        # Use parameterized queries with proper escaping
+        search_pattern = f"%{sanitized_query}%"
         stmt = select(Contact).where(
             Contact.user_id == user_id,
             or_(
-                Contact.name.ilike(f"%{query_str}%"),
-                Contact.company.ilike(f"%{query_str}%")
+                Contact.name.ilike(search_pattern),
+                Contact.company.ilike(search_pattern)
             )
         )
         result = await self.session.execute(stmt)

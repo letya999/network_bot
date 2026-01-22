@@ -1,6 +1,9 @@
 import os
 import logging
 import time
+import uuid
+import tempfile
+from pathlib import Path
 from telegram import Update
 from telegram.ext import ContextTypes
 from app.db.session import AsyncSessionLocal
@@ -8,6 +11,7 @@ from app.services.user_service import UserService
 from app.services.contact_service import ContactService
 from app.services.gemini_service import GeminiService
 from app.services.export_service import ExportService
+from app.bot.rate_limiter import rate_limit_middleware
 
 logger = logging.getLogger(__name__)
 
@@ -62,33 +66,58 @@ def format_card(contact):
     return text
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Security: Check rate limit
+    if not await rate_limit_middleware(update, context):
+        return
+
     user = update.effective_user
     voice = update.message.voice
-    logger.info(f"Received voice from user {user.id} ({user.username}). Duration: {voice.duration}s")
-    
+    logger.info(f"Received voice from user {user.id}. Duration: {voice.duration}s")
+
+    # Security: Validate voice file size (max 20MB)
+    if voice.file_size and voice.file_size > 20 * 1024 * 1024:
+        await update.message.reply_text("❌ Файл слишком большой. Максимум 20 МБ.")
+        return
+
+    # Security: Validate duration (max 10 minutes)
+    if voice.duration > 600:
+        await update.message.reply_text("❌ Слишком длинное сообщение. Максимум 10 минут.")
+        return
+
     status_msg = await update.message.reply_text("🎤 Слушаю и обрабатываю...")
-    
-    os.makedirs("downloads", exist_ok=True)
-    file_path = f"downloads/{voice.file_id}.ogg"
-    
+
+    # Security: Use secure temporary directory with random filename
+    temp_dir = tempfile.mkdtemp(prefix="voice_")
+    # Generate random filename to prevent path traversal
+    random_filename = f"{uuid.uuid4()}.ogg"
+    file_path = os.path.join(temp_dir, random_filename)
+
     try:
         new_file = await context.bot.get_file(voice.file_id)
         await new_file.download_to_drive(file_path)
-        
+
+        # Security: Validate file type by checking magic bytes
+        with open(file_path, 'rb') as f:
+            header = f.read(4)
+            # OGG files start with "OggS"
+            if header[:4] != b'OggS':
+                await status_msg.edit_text("❌ Неверный формат файла.")
+                return
+
         gemini = GeminiService()
         data = await gemini.extract_contact_data(audio_path=file_path)
-        
+
         async with AsyncSessionLocal() as session:
             user_service = UserService(session)
             db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
-            
+
             contact_service = ContactService(session)
-            
+
             # Merge logic
             now = time.time()
             last_contact_time = context.user_data.get("last_contact_time", 0)
             last_contact_id = context.user_data.get("last_contact_id")
-            
+
             contact = None
             if last_contact_id and (now - last_contact_time < 300):
                 contact = await contact_service.update_contact(last_contact_id, data)
@@ -102,17 +131,28 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             card = format_card(contact)
             await update.message.reply_text(card)
-            
+
     except Exception as e:
         logger.exception("Error handling voice")
-        await status_msg.edit_text(f"Произошла ошибка: {e}")
+        # Security: Don't expose internal error details to user
+        await status_msg.edit_text("❌ Произошла ошибка при обработке. Попробуйте еще раз.")
     finally:
-        if os.path.exists(file_path):
-            os.remove(file_path)
+        # Security: Clean up temporary files and directory
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            if os.path.exists(temp_dir):
+                os.rmdir(temp_dir)
+        except Exception as cleanup_error:
+            logger.error(f"Error cleaning up temporary files: {cleanup_error}")
 
 async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Security: Check rate limit
+    if not await rate_limit_middleware(update, context):
+        return
+
     user = update.effective_user
-    logger.info(f"Received contact from user {user.id} ({user.username}).")
+    logger.info(f"Received contact from user {user.id}.")
     contact_data = update.message.contact
     
     data = {
@@ -170,20 +210,34 @@ async def list_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text)
 
 async def find_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Security: Check rate limit
+    if not await rate_limit_middleware(update, context):
+        return
+
     user = update.effective_user
     if not context.args:
         await update.message.reply_text("Использование: /find <имя или компания>")
         return
-    
+
     query = " ".join(context.args)
-    logger.info(f"User {user.id} searching for: {query}")
+
+    # Security: Validate query length
+    if len(query) > 100:
+        await update.message.reply_text("❌ Поисковый запрос слишком длинный. Максимум 100 символов.")
+        return
+
+    if len(query.strip()) == 0:
+        await update.message.reply_text("❌ Пустой поисковый запрос.")
+        return
+
+    logger.info(f"User {user.id} searching contacts")
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
         db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
-        
+
         contact_service = ContactService(session)
         contacts = await contact_service.find_contacts(db_user.id, query)
-        
+
         if not contacts:
             await update.message.reply_text("Ничего не найдено.")
             return
@@ -194,10 +248,14 @@ async def find_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if c.company:
                 text += f" — {c.company}"
             text += "\n"
-        
+
         await update.message.reply_text(text)
 
 async def export_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Security: Check rate limit
+    if not await rate_limit_middleware(update, context):
+        return
+
     user = update.effective_user
     logger.info(f"User {user.id} requested export.")
     status_msg = await update.message.reply_text("⏳ Генерирую экспорт...")
