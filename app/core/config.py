@@ -5,8 +5,9 @@ from typing import Optional
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_ignore_empty=True, extra="ignore")
 
-    POSTGRES_USER: str = "postgres"
-    POSTGRES_PASSWORD: str = "postgres"
+    # Security: Remove default credentials - require them to be set in .env
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
     POSTGRES_DB: str = "network_bot"
     POSTGRES_HOST: str = "localhost"
     POSTGRES_PORT: int = 5432
