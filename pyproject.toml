@@ -1,7 +1,21 @@
 [project]
 name = "network-bot"
 version = "0.1.0"
-description = "Add your description here"
+description = "NetworkingCRM Telegram Bot"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+    "sqlalchemy>=2.0.36",
+    "asyncpg>=0.30.0",
+    "pydantic-settings>=2.6.1",
+    "alembic>=1.13.3",
+    "python-telegram-bot>=21.7",
+    "redis>=5.2.0",
+    "google-generativeai>=0.8.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
