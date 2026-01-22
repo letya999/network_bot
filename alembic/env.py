@@ -1,5 +1,10 @@
 import asyncio
+import sys
+import os
 from logging.config import fileConfig
+
+# Force local import of app
+sys.path.insert(0, os.getcwd())
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection

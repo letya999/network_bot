@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    logger.info(f"User {user.id} ({user.username}) started the bot.")
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
         await user_service.get_or_create_user(user.id, user.username, user.first_name)
@@ -63,6 +64,7 @@ def format_card(contact):
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     voice = update.message.voice
+    logger.info(f"Received voice from user {user.id} ({user.username}). Duration: {voice.duration}s")
     
     status_msg = await update.message.reply_text("🎤 Слушаю и обрабатываю...")
     
@@ -102,7 +104,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(card)
             
     except Exception as e:
-        logger.error(f"Error handling voice: {e}")
+        logger.exception("Error handling voice")
         await status_msg.edit_text(f"Произошла ошибка: {e}")
     finally:
         if os.path.exists(file_path):
@@ -110,6 +112,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    logger.info(f"Received contact from user {user.id} ({user.username}).")
     contact_data = update.message.contact
     
     data = {
@@ -145,6 +148,7 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def list_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    logger.info(f"User {user.id} requested contact list.")
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
         db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
@@ -172,6 +176,7 @@ async def find_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     query = " ".join(context.args)
+    logger.info(f"User {user.id} searching for: {query}")
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
         db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
@@ -194,6 +199,7 @@ async def find_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def export_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    logger.info(f"User {user.id} requested export.")
     status_msg = await update.message.reply_text("⏳ Генерирую экспорт...")
     
     async with AsyncSessionLocal() as session:

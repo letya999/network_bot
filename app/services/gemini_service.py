@@ -4,11 +4,23 @@ import json
 import os
 from typing import Dict, Any, Optional
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 class GeminiService:
     def __init__(self):
         if settings.GEMINI_API_KEY:
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
+            # Using 'latest' alias which usually points to the current stable model supported by the API key
+            self.model = genai.GenerativeModel('gemini-flash-latest')
+            
+            # Log available models for debugging
+            try:
+                available_models = [m.name for m in genai.list_models()]
+                logger.info(f"Available Gemini models: {available_models}")
+            except Exception as e:
+                logger.warning(f"Could not list models: {e}")
         else:
             self.model = None
 
@@ -35,7 +47,7 @@ class GeminiService:
             # genai.upload_file returns a File object.
             # It performs network request. Ideally we should run this in thread pool if it's blocking.
             # But specific SDK behavior might vary. upload_file seems synchronous.
-            sample_file = genai.upload_file(path=audio_path, display_name="Audio Sample")
+            sample_file = genai.upload_file(path=audio_path, mime_type="audio/ogg", display_name="Audio Sample")
             content.append(sample_file)
         
         if text:
