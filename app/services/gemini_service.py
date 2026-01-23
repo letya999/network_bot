@@ -12,15 +12,8 @@ class GeminiService:
     def __init__(self):
         if settings.GEMINI_API_KEY:
             genai.configure(api_key=settings.GEMINI_API_KEY)
-            # Using 'latest' alias which usually points to the current stable model supported by the API key
+            # Using 'latest' alias which usually points to the current stable model
             self.model = genai.GenerativeModel('gemini-flash-latest')
-            
-            # Log available models for debugging
-            try:
-                available_models = [m.name for m in genai.list_models()]
-                logger.info(f"Available Gemini models: {available_models}")
-            except Exception as e:
-                logger.warning(f"Could not list models: {e}")
         else:
             self.model = None
 
@@ -37,7 +30,6 @@ class GeminiService:
             logger.warning("GEMINI_API_KEY not set")
             return {"name": "Test User", "raw_transcript": "No API Key", "notes": "Gemini disabled"}
 
-<<<<<<< HEAD
         if prompt_template:
             prompt_text = prompt_template
         else:
@@ -45,49 +37,50 @@ class GeminiService:
         
         content = [prompt_text]
         
-=======
-        # Security: Validate audio file path to prevent path traversal
->>>>>>> 62d77dd7e8d219af23e6068efd606c51919405a3
+        # Security: Validate audio file path
         if audio_path:
-            import os
             if not os.path.exists(audio_path):
                 logger.error("Audio file does not exist")
                 return {"name": "Неизвестно", "notes": "File error"}
 
-            # Security: Validate file size (max 20MB)
             file_size = os.path.getsize(audio_path)
             if file_size > 20 * 1024 * 1024:
                 logger.error("Audio file too large")
                 return {"name": "Неизвестно", "notes": "File too large"}
 
-        prompt_text = self.get_prompt("extract_contact")
-
-        content = [prompt_text]
-
-        if audio_path:
             try:
-                sample_file = genai.upload_file(path=audio_path, mime_type="audio/ogg", display_name="Audio Sample")
+                logger.info(f"Uploading audio file: {audio_path} (size: {file_size} bytes)")
+                sample_file = genai.upload_file(path=audio_path, mime_type="audio/ogg")
+                logger.info(f"Upload successful. File: {sample_file.name}")
                 content.append(sample_file)
             except Exception as e:
-                logger.error(f"Failed to upload audio file: {e}")
-                return {"name": "Неизвестно", "notes": "Upload failed"}
+                logger.exception(f"Failed to upload audio file: {e}")
+                return {"name": "Неизвестно", "notes": f"Upload failed: {str(e)}"}
 
         if text:
-            # Security: Limit text length to prevent abuse
             if len(text) > 10000:
                 text = text[:10000]
             content.append(text)
 
         # Generate content
         try:
-            response = await self.model.generate_content_async(content)
+            logger.info(f"Calling Gemini API with {len(content)} content items")
+            response = await self.model.generate_content_async(
+                content,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            logger.info("Gemini API call successful")
         except Exception as e:
-            logger.error(f"Gemini API error: {e}")
-            return {"name": "Неизвестно", "notes": "API error"}
+            logger.exception(f"Gemini API error: {e}")
+            return {"name": "Неизвестно", "notes": f"API error: {str(e)}"}
 
         # Parse JSON
         try:
             json_str = response.text.strip()
+            logger.info(f"Raw response (first 200 chars): {json_str[:200]}")
+            
             if json_str.startswith("```json"):
                 json_str = json_str[7:]
             if json_str.startswith("```"):
@@ -96,17 +89,45 @@ class GeminiService:
                 json_str = json_str[:-3]
 
             parsed_data = json.loads(json_str)
+            logger.info(f"Successfully parsed JSON: {list(parsed_data.keys())}")
 
-            # Security: Validate parsed data structure
             if not isinstance(parsed_data, dict):
                 logger.error("Invalid response format from Gemini")
                 return {"name": "Неизвестно", "notes": "Invalid format"}
 
             return parsed_data
         except Exception as e:
-            # Security: Don't expose internal error details
-            logger.error(f"Error parsing Gemini response: {e}")
+            logger.exception(f"Error parsing Gemini response: {e}")
             return {
                 "name": "Неизвестно",
-                "notes": "Processing error"
+                "notes": f"Processing error: {str(e)}"
             }
+
+    async def customize_card_intro(self, user_profile: str, target_contact: str) -> str:
+        if not self.model:
+            return "Привет! Буду рад оставаться на связи."
+            
+        prompt = f"""
+        Act as a professional networking assistant.
+        
+        My Profile:
+        {user_profile}
+        
+        Target Contact I am sending my card to:
+        {target_contact}
+        
+        Task:
+        Write a short context-specific introduction (max 2-3 sentences) for me to include in my business card when sending it to this person.
+        Highlight relevant synergies or why I am connecting based on *their* profile and *my* profile.
+        Focus on common interests, industries, or how I can help them.
+        Write in Russian.
+        
+        Output ONLY the introduction text.
+        """
+        
+        try:
+             response = await self.model.generate_content_async(prompt)
+             return response.text.strip()
+        except Exception as e:
+             logger.error(f"Gemini custom intro error: {e}")
+             return "Привет! Буду рад оставаться на связи."

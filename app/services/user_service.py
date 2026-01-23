@@ -24,6 +24,11 @@ class UserService:
         
         return user
 
+    async def get_user(self, telegram_id: int) -> User:
+        stmt = select(User).where(User.telegram_id == telegram_id)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def update_custom_prompt(self, telegram_id: int, prompt_text: str):
         stmt = select(User).where(User.telegram_id == telegram_id)
         result = await self.session.execute(stmt)

@@ -1,10 +1,15 @@
 import logging
 from telegram import Update, BotCommand
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, TypeHandler, ConversationHandler
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, TypeHandler, ConversationHandler, CallbackQueryHandler
 from app.core.config import settings
 from app.bot.handlers import (
     start, handle_voice, handle_contact, list_contacts, find_contact, export_contacts, handle_text_message,
-    show_prompt, start_edit_prompt, save_prompt, cancel_prompt_edit, reset_prompt, WAITING_FOR_PROMPT
+    show_prompt, start_edit_prompt, save_prompt, cancel_prompt_edit, reset_prompt, WAITING_FOR_PROMPT,
+    generate_card_callback
+)
+from app.bot.profile_handlers import (
+    show_profile, handle_edit_callback, save_profile_value, cancel_edit, 
+    SELECT_FIELD, INPUT_VALUE, send_card, share_card
 )
 
 logger = logging.getLogger(__name__)
@@ -16,9 +21,14 @@ async def post_init(application):
     bot = application.bot
     commands = [
         BotCommand("start", "Запустить бота"),
+        BotCommand("profile", "Мой профиль"),
+        BotCommand("card", "Моя визитка"),
+        BotCommand("share", "Поделиться профилем"),
         BotCommand("list", "Показать список контактов"),
         BotCommand("find", "Найти контакт"),
         BotCommand("export", "Экспорт контактов в CSV"),
+        BotCommand("prompt", "Показать текущий промпт"),
+        BotCommand("edit_prompt", "Изменить промпт"),
     ]
     await bot.set_my_commands(commands)
     logger.info(f"Bot commands set: {commands}")
@@ -75,6 +85,22 @@ def create_bot():
         fallbacks=[CommandHandler("cancel", cancel_prompt_edit)]
     )
     app.add_handler(prompt_conv)
+
+    profile_conv = ConversationHandler(
+        entry_points=[CommandHandler("profile", show_profile)],
+        states={
+            SELECT_FIELD: [CallbackQueryHandler(handle_edit_callback)],
+            INPUT_VALUE: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_profile_value)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_edit)]
+    )
+    app.add_handler(profile_conv)
+    
+    app.add_handler(CommandHandler("card", send_card))
+    app.add_handler(CommandHandler("share", share_card))
+    
+    # Callback for finding contacts card generation
+    app.add_handler(CallbackQueryHandler(generate_card_callback, pattern="^gen_card_"))
     
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))

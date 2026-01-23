@@ -2,20 +2,21 @@ Extract contact information from the following text or transcription.
 Return a valid JSON object with the following fields:
 
 - name: (string) The name of the person. If not found, use "Неизвестно".
-- company: (string or null)
+- company: (string or null) Verify company names if possible (e.g. "Google", "Yandex"). If unheard, write phonetically.
 - role: (string or null)
 - event: (string or null) Where the meeting took place or context.
 - telegram_username: (string or null)
 - phone: (string or null)
 - email: (string or null)
-- agreements: (array of strings) What was agreed upon.
-- follow_up_action: (string or null) The next step.
+- agreements: (array of strings) What was agreed upon. IMPORTANT: Do NOT include the item listed in "follow_up_action" here.
+- follow_up_action: (string or null) The single most important next step (e.g. "write on Tuesday").
 - what_looking_for: (string or null) What the person is looking for.
 - can_help_with: (string or null) How the person can help.
 - topics: (array of strings) Topics discussed.
 - notes: (string or null) Any other relevant details.
-- raw_transcript: (string) The full transcription of the voice/text input.
+- raw_transcript: (string) The full transcription of the voice/text input. Verify spelling of names and companies.
 
 Do not use Markdown formatting (like brackets ```json or ```). Return ONLY the raw JSON string.
 If information is missing, use null or empty array.
-If the input is in Russian, the output values should be in Russian (except specific identifiers like emails).
+If the input is in Russian, the output values should be in Russian (except specific identifiers like emails/handles).
+Focus on HIGH ACCURACY for names and companies. If a name sounds like "NDDF" write "NDDF", don't guess "Wandle" unless context implies.

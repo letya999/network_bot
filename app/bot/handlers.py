@@ -5,18 +5,17 @@ import uuid
 import tempfile
 from pathlib import Path
 from telegram import Update
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 from app.db.session import AsyncSessionLocal
 from app.services.user_service import UserService
 from app.services.contact_service import ContactService
 from app.services.gemini_service import GeminiService
 from app.services.export_service import ExportService
-<<<<<<< HEAD
 from app.utils.text_parser import extract_contact_info
-=======
 from app.bot.rate_limiter import rate_limit_middleware
->>>>>>> 62d77dd7e8d219af23e6068efd606c51919405a3
+from app.services.profile_service import ProfileService
+from app.services.card_service import CardService
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +25,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
         await user_service.get_or_create_user(user.id, user.username, user.first_name)
+        
+        # Handle Deep Linking
+        if context.args and context.args[0].startswith("c_"):
+            try:
+                target_id = int(context.args[0][2:])
+                target_user = await user_service.get_user(target_id)
+                
+                if target_user:
+                    profile_service = ProfileService(session)
+                    # We reuse get_profile logic (it calls get_or_create but we know user exists)
+                    profile = await profile_service.get_profile(target_id)
+                    card_text = CardService.generate_text_card(profile)
+                    
+                    await update.message.reply_text(
+                        f"👋 Привет! Вот визитка, которой с тобой поделились:\n\n{card_text}\n\n"
+                        "_Нажми /save чтобы сохранить (WIP)_", 
+                        parse_mode="Markdown"
+                    )
+                    # Optimization: Should we prompt to save this user as a Contact immediately?
+                    # That would be a nice "reception" flow.
+                else:
+                    await update.message.reply_text("❌ Профиль не найден или удален.")
+            except ValueError:
+                pass
         
     await update.message.reply_text(
         f"Привет {user.first_name}! Я Networking Bot.\n"
@@ -67,6 +90,14 @@ def format_card(contact):
     
     if contact.can_help_with:
         text += f"🤝 Может помочь: {contact.can_help_with}\n"
+    
+    # Show notes/errors (stored in attributes for "Неизвестно" contacts)
+    notes = None
+    if hasattr(contact, 'attributes') and contact.attributes:
+        notes = contact.attributes.get('notes')
+    
+    if notes:
+        text += f"\n📄 Заметки: {notes}\n"
         
     return text
 
@@ -90,6 +121,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     status_msg = await update.message.reply_text("🎤 Слушаю и обрабатываю...")
+    status_msg_deleted = False  # Track if we deleted the status message
 
     # Security: Use secure temporary directory with random filename
     temp_dir = tempfile.mkdtemp(prefix="voice_")
@@ -110,7 +142,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
         gemini = GeminiService()
-<<<<<<< HEAD
         
         async with AsyncSessionLocal() as session:
             user_service = UserService(session)
@@ -120,15 +151,6 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt_to_use = db_user.custom_prompt
             
             data = await gemini.extract_contact_data(audio_path=file_path, prompt_template=prompt_to_use)
-            
-=======
-        data = await gemini.extract_contact_data(audio_path=file_path)
-
-        async with AsyncSessionLocal() as session:
-            user_service = UserService(session)
-            db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
-
->>>>>>> 62d77dd7e8d219af23e6068efd606c51919405a3
             contact_service = ContactService(session)
 
             # Merge logic
@@ -146,6 +168,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data["last_voice_id"] = contact.id
                 context.user_data["last_voice_time"] = now
                 await status_msg.delete()
+                status_msg_deleted = True  # Mark as deleted
 
             card = format_card(contact)
             await update.message.reply_text(card)
@@ -153,7 +176,13 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.exception("Error handling voice")
         # Security: Don't expose internal error details to user
-        await status_msg.edit_text("❌ Произошла ошибка при обработке. Попробуйте еще раз.")
+        # Only try to edit if we haven't deleted the message
+        if not status_msg_deleted:
+            try:
+                await status_msg.edit_text("❌ Произошла ошибка при обработке. Попробуйте еще раз.")
+            except Exception:
+                # Message might have been deleted or is no longer editable
+                await update.message.reply_text("❌ Произошла ошибка при обработке. Попробуйте еще раз.")
     finally:
         # Security: Clean up temporary files and directory
         try:
@@ -268,6 +297,74 @@ async def find_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text += "\n"
 
         await update.message.reply_text(text)
+
+        # Personalization: Show buttons if few results
+        if len(contacts) <= 5:
+            keyboard = []
+            for c in contacts:
+                # Callback data: gen_card_<uuid>
+                keyboard.append([InlineKeyboardButton(f"✨ Визитка для {c.name}", callback_data=f"gen_card_{c.id}")])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_text("Выберите контакт для генерации персонализированной визитки:", reply_markup=reply_markup)
+
+async def generate_card_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer("Генерирую визитку... (это может занять пару секунд)", show_alert=True)
+    
+    data = query.data
+    if not data.startswith("gen_card_"):
+        return
+        
+    target_id = data[9:] # strip "gen_card_"
+    user = update.effective_user
+    
+    # Send temporary status
+    status_msg = await query.message.reply_text("⏳ Читаю профили и придумываю интро...", quote=True)
+
+    try:
+        async with AsyncSessionLocal() as session:
+            user_service = UserService(session)
+            # Ensure user exists (should be)
+            await user_service.get_or_create_user(user.id)
+            
+            # Get Target
+            from app.models.contact import Contact
+            target_contact = await session.get(Contact, target_id)
+            
+            if not target_contact:
+                await status_msg.edit_text("❌ Контакт не найден.")
+                return
+
+            # Get My Profile
+            profile_service = ProfileService(session)
+            my_profile = await profile_service.get_profile(user.id)
+            
+            # Prepare Gemini inputs
+            gemini = GeminiService()
+            
+            target_info_str = f"Name: {target_contact.name}\n"
+            if target_contact.company: target_info_str += f"Company: {target_contact.company}\n"
+            if target_contact.role: target_info_str += f"Role: {target_contact.role}\n"
+            if target_contact.what_looking_for: target_info_str += f"Looking for: {target_contact.what_looking_for}\n"
+            if target_contact.can_help_with: target_info_str += f"Can help with: {target_contact.can_help_with}\n"
+            if target_contact.topics: target_info_str += f"Topics: {', '.join(target_contact.topics)}\n"
+
+            my_info_str = f"Name: {my_profile.full_name}\nBio: {my_profile.bio}\nJob: {my_profile.job_title} at {my_profile.company}\nInterests: {', '.join(my_profile.interests)}"
+            
+            intro = await gemini.customize_card_intro(my_info_str, target_info_str)
+            
+            card_text = CardService.generate_text_card(my_profile, intro_text=intro)
+            
+            await status_msg.delete()
+            await query.message.reply_text(
+                f"📨 *Персонализированная визитка для {target_contact.name}*:\n\n"
+                f"{card_text}",
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        logger.error(f"Error generating card: {e}")
+        await status_msg.edit_text("❌ Произошла ошибка при генерации.")
 
 async def export_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Security: Check rate limit

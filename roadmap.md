@@ -21,16 +21,16 @@ Based on [OpenSpec Specification](context.md).
 - [x] Task 1.8: /list handler + пагинация
 - [x] Task 1.9: /find handler — базовый поиск
 - [x] Task 1.10: /export handler — CSV экспорт
-- [ ] Task 1.11: End-to-end тестирование MVP
+- [x] Task 1.11: End-to-end тестирование MVP
 
 ## Phase 2: Profile & Cards
-- [ ] Task 2.1: User model + ProfileService
-- [ ] Task 2.2: /profile handler — просмотр и редактирование
-- [ ] Task 2.3: CardGeneratorService — генерация визиток
-- [ ] Task 2.4: /card handler — context-specific cards
-- [ ] Task 2.5: /share handler — генерация ссылок
-- [ ] Task 2.6: Deep link handling — приём контактов по ссылке
-- [ ] Task 2.7: Персонализация под конкретного контакта
+- [x] Task 2.1: User model + ProfileService
+- [x] Task 2.2: /profile handler — просмотр и редактирование
+- [x] Task 2.3: CardGeneratorService — генерация визиток
+- [x] Task 2.4: /card handler — context-specific cards
+- [x] Task 2.5: /share handler — генерация ссылок
+- [x] Task 2.6: Deep link handling — приём контактов по ссылке
+- [x] Task 2.7: Персонализация под конкретного контакта
 
 ## Phase 3: Follow-up
 - [ ] Task 3.1: Reminder model + ReminderService
