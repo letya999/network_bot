@@ -28,4 +28,16 @@ class Settings(BaseSettings):
     TELEGRAM_BOT_TOKEN: str
     GEMINI_API_KEY: Optional[str] = None
 
+    # OSINT & Enrichment Settings
+    GOOGLE_CSE_API_KEY: Optional[str] = None  # Google Custom Search Engine API Key
+    GOOGLE_CSE_CX: Optional[str] = None  # Google Custom Search Engine ID
+
+    # OSINT Rate Limits
+    OSINT_DAILY_LIMIT: int = 50  # Max enrichments per user per day
+    OSINT_RATE_LIMIT_WINDOW: int = 60  # Seconds between enrichment requests
+
+    # Auto-enrichment settings
+    AUTO_ENRICH_ON_CREATE: bool = True  # Auto-enrich new contacts
+    OSINT_CACHE_DAYS: int = 30  # Days before re-enrichment is allowed
+
 settings = Settings()
