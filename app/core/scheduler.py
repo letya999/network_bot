@@ -2,9 +2,29 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.redis import RedisJobStore
 from app.core.config import settings
 import logging
+import uuid
 from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+
+async def auto_enrich_contact_job(contact_id: uuid.UUID):
+    """
+    Background job to auto-enrich a newly created contact.
+    Runs 5 seconds after contact creation.
+    """
+    from app.db.session import AsyncSessionLocal
+    from app.services.osint_service import OSINTService
+
+    logger.info(f"Auto-enrichment job started for contact {contact_id}")
+
+    try:
+        async with AsyncSessionLocal() as session:
+            osint_service = OSINTService(session)
+            result = await osint_service.enrich_contact(contact_id)
+            logger.info(f"Auto-enrichment result for {contact_id}: {result['status']}")
+    except Exception as e:
+        logger.exception(f"Auto-enrichment failed for {contact_id}: {e}")
 
 # Configure Redis Job Store
 redis_url_str = str(settings.REDIS_URL)

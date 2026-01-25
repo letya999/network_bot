@@ -22,6 +22,7 @@ from app.services.reminder_service import ReminderService
 import dateparser
 from datetime import datetime, timedelta
 from app.bot.match_handlers import notify_match_if_any
+from app.services.osint_service import format_osint_data
 
 logger = logging.getLogger(__name__)
 
@@ -123,11 +124,40 @@ def format_card(contact):
     notes = None
     if hasattr(contact, 'attributes') and contact.attributes:
         notes = contact.attributes.get('notes')
-    
+
     if notes:
         text += f"\n📄 Заметки: {notes}\n"
-        
+
+    # Show OSINT data if available
+    if hasattr(contact, 'osint_data') and contact.osint_data:
+        osint_text = format_osint_data(contact.osint_data)
+        if osint_text:
+            text += f"\n{'─' * 20}\n📊 *Публичная информация:*\n{osint_text}\n"
+
     return text
+
+
+def get_contact_keyboard(contact):
+    """Generate inline keyboard for contact card."""
+    keyboard = []
+
+    # Add "Find Information" button if not enriched
+    if not contact.osint_data or contact.osint_data.get("no_results"):
+        keyboard.append([
+            InlineKeyboardButton("🔍 Найти информацию", callback_data=f"enrich_{contact.id}")
+        ])
+    else:
+        keyboard.append([
+            InlineKeyboardButton("🔄 Обновить данные", callback_data=f"enrich_{contact.id}")
+        ])
+
+    # Add "Generate Card" button
+    keyboard.append([
+        InlineKeyboardButton("✨ Визитка для него", callback_data=f"gen_card_{contact.id}")
+    ])
+
+    return InlineKeyboardMarkup(keyboard) if keyboard else None
+
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Security: Check rate limit
@@ -246,7 +276,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             if contact:
                 card = format_card(contact)
-                await update.message.reply_text(card)
+                keyboard = get_contact_keyboard(contact)
+                await update.message.reply_text(
+                    card, parse_mode="Markdown", reply_markup=keyboard,
+                    disable_web_page_preview=True
+                )
 
     except Exception as e:
         logger.exception("Error handling voice")
@@ -313,7 +347,11 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data.pop("last_voice_id", None)
                 
                 card = format_card(existing)
-                await update.message.reply_text(card)
+                keyboard = get_contact_keyboard(existing)
+                await update.message.reply_text(
+                    card, parse_mode="Markdown", reply_markup=keyboard,
+                    disable_web_page_preview=True
+                )
                 return
 
         contact = None
@@ -327,9 +365,13 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["last_contact_id"] = contact.id
             context.user_data["last_contact_time"] = now
             await notify_match_if_any(update, contact, db_user, session)
-        
+
         card = format_card(contact)
-        await update.message.reply_text(card)
+        keyboard = get_contact_keyboard(contact)
+        await update.message.reply_text(
+            card, parse_mode="Markdown", reply_markup=keyboard,
+            disable_web_page_preview=True
+        )
 
 async def list_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
@@ -665,7 +707,11 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             await notify_match_if_any(update, contact, db_user, session)
 
         card = format_card(contact)
-        await update.message.reply_text(card)
+        keyboard = get_contact_keyboard(contact)
+        await update.message.reply_text(
+            card, parse_mode="Markdown", reply_markup=keyboard,
+            disable_web_page_preview=True
+        )
 
 # Prompt Conversation States
 WAITING_FOR_PROMPT = 1

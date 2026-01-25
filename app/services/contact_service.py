@@ -4,6 +4,7 @@ from app.models.contact import Contact, ContactStatus
 from app.models.interaction import Interaction, InteractionType
 from typing import Dict, Any, List
 from app.services.reminder_service import ReminderService
+from app.core.config import settings
 from datetime import datetime, timedelta
 import dateparser
 import uuid
@@ -63,11 +64,11 @@ class ContactService:
                     if due_date_str and title:
                         # Try parsing date using dateparser
                         due_date = dateparser.parse(due_date_str, settings={'PREFER_DATES_FROM': 'future'})
-                        
+
                         # Default to tomorrow if parsing fails or returns past
                         if not due_date or due_date < datetime.now():
                              due_date = datetime.now() + timedelta(days=1)
-                             
+
                         await reminder_service.create_reminder(
                             user_id=user_id,
                             contact_id=contact.id,
@@ -77,6 +78,24 @@ class ContactService:
                         )
                 except Exception as e:
                     logger.error(f"Failed to create extracted reminder: {e}")
+
+        # Schedule auto-enrichment if enabled and contact has a name
+        if settings.AUTO_ENRICH_ON_CREATE and contact.name and contact.name != "Неизвестно":
+            try:
+                from app.core.scheduler import scheduler, auto_enrich_contact_job
+                # Schedule enrichment 5 seconds after creation
+                run_date = datetime.now() + timedelta(seconds=5)
+                scheduler.add_job(
+                    auto_enrich_contact_job,
+                    'date',
+                    run_date=run_date,
+                    args=[contact.id],
+                    id=f"enrich_{contact.id}",
+                    replace_existing=True
+                )
+                logger.info(f"Scheduled auto-enrichment for contact {contact.id}")
+            except Exception as e:
+                logger.error(f"Failed to schedule auto-enrichment: {e}")
 
         return contact
 
