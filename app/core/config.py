@@ -29,8 +29,7 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: Optional[str] = None
 
     # OSINT & Enrichment Settings
-    GOOGLE_CSE_API_KEY: Optional[str] = None  # Google Custom Search Engine API Key
-    GOOGLE_CSE_CX: Optional[str] = None  # Google Custom Search Engine ID
+    TAVILY_API_KEY: Optional[str] = None  # Tavily AI Search API Key
 
     # OSINT Rate Limits
     OSINT_DAILY_LIMIT: int = 50  # Max enrichments per user per day

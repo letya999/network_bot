@@ -157,11 +157,11 @@ def get_contact_keyboard(contact):
     # Add "Find Information" button if not enriched
     if not contact.osint_data or contact.osint_data.get("no_results"):
         keyboard.append([
-            InlineKeyboardButton("🔍 Найти информацию", callback_data=f"enrich_{contact.id}")
+            InlineKeyboardButton("🔍 Найти информацию", callback_data=f"enrich_start_{contact.id}")
         ])
     else:
         keyboard.append([
-            InlineKeyboardButton("🔄 Обновить данные", callback_data=f"enrich_{contact.id}")
+            InlineKeyboardButton("🔄 Обновить данные", callback_data=f"enrich_start_{contact.id}")
         ])
 
     # Add "Generate Card" button

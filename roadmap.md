@@ -126,7 +126,7 @@ Based on [OpenSpec Specification](context.md).
 - [x] Task 4.2.1: LinkedIn search — карьера, образование, курсы, города
 - [x] Task 4.2.2: Google search — публикации, выступления, упоминания
 - [x] Task 4.2.3: Промпт для структурирования найденных данных через Gemini
-- [ ] Task 4.2.4: Proxycurl integration (optional, платный — точные данные LinkedIn)
+- [x] Task 4.2.4: Deep Google X-Ray (вместо платного Proxycurl) — глубокий поиск по секциям профиля
 
 #### 4.3: Автоматизация
 - [x] Task 4.3.1: Background enrichment task (при сохранении контакта)

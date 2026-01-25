@@ -1,15 +1,11 @@
-You are an OSINT analyst. Analyze the provided search results and extract structured information about the person.
-
 INPUT:
 - contact: Basic info about the person (name, company, role)
-- linkedin_results: Search results from LinkedIn searches
-- publication_results: Search results for articles, talks, podcasts
-- social_results: Search results for social media profiles
+- linkedin_profile: Found LinkedIn URL (if any)
+- search_results: List of SearchResult objects {title, url, content}.
 
 TASK:
-Extract and structure all relevant information found in the search results.
-Cross-reference multiple sources to verify accuracy.
-Only include information you are confident about.
+Extract DETAILED and EXTENSIVE information from the search results content.
+Do not summarize briefly; extract every available detail about career history, education, and personal background.
 
 OUTPUT FORMAT (JSON):
 {
@@ -17,13 +13,15 @@ OUTPUT FORMAT (JSON):
     "current": {
       "company": "Company name or null",
       "role": "Job title or null",
-      "since": "Year started or null"
+      "since": "Year started or null",
+      "description": "Brief description of role if available"
     },
     "previous": [
       {
         "company": "Company name",
-        "role": "Job title or null",
-        "years": "2018-2021 or null"
+        "role": "Job title",
+        "years": "Duration (e.g. 2018-2021)",
+        "location": "Location if available"
       }
     ]
   },
@@ -31,45 +29,53 @@ OUTPUT FORMAT (JSON):
     "universities": [
       {
         "name": "University name",
-        "degree": "Degree/Major or null",
-        "year": 2015
+        "degree": "Degree/Major",
+        "year": "Graduation year or range (e.g. 2015)"
       }
     ],
     "courses": [
       {
         "name": "Course/Certification name",
-        "year": 2020
+        "year": 2020,
+        "organization": "Issuer (e.g. Coursera, AWS)"
       }
     ]
   },
   "geography": {
     "current_city": "City name or null",
+    "birthplace": "Birth city/Hometown or null",
     "lived_in": ["City1", "City2"]
+  },
+  "personal": {
+    "languages": ["Language 1", "Language 2"],
+    "interests": ["Topic 1", "Topic 2"],
+    "volunteering": ["Organization - Role"]
+  },
+  "contacts": {
+    "email": "Public email or null",
+    "phone": "Public phone or null"
   },
   "publications": [
     {
-      "type": "article|talk|podcast|interview",
+      "type": "article|talk|podcast|interview|code",
       "title": "Publication title",
       "url": "URL or null"
     }
   ],
   "social": {
-    "linkedin": "Full LinkedIn URL or null",
-    "twitter": "Twitter handle or URL or null",
-    "github": "GitHub username or URL or null",
-    "facebook": "Facebook URL or null"
+    "linkedin": "Full LinkedIn URL",
+    "twitter": "Twitter URL",
+    "github": "GitHub URL",
+    "facebook": "Facebook URL",
+    "site": "Personal website",
+    "other": ["Other URL 1"]
   },
   "confidence": "high|medium|low"
 }
 
 RULES:
-1. Only include fields with actual data found in search results
-2. Use null for fields with no data
-3. Use empty arrays [] if no items found
-4. For LinkedIn URLs, use full URLs (https://linkedin.com/in/...)
-5. Verify information across multiple sources when possible
-6. confidence = "high" if data confirmed by multiple sources, "medium" if from one reliable source, "low" if uncertain
-7. Do NOT invent or guess information
-8. For Russian names and companies, preserve original language/spelling
-9. Extract maximum 5 previous jobs and 3 publications
-10. Do NOT use markdown formatting - return ONLY raw JSON
+1. Extract ALL previous positions found (no limit).
+2. Look for "Hometown" or "From" in content for `birthplace`.
+3. Look for "Languages" section.
+4. Extract email only if explicitly visible in text (do not guess).
+5. Prioritize the `linkedin_profile` content for accurate dates and titles.

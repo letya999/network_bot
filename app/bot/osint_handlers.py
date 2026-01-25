@@ -32,8 +32,7 @@ WAITING_FOR_CSV = 1
 
 async def enrich_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    /enrich [contact_name] - Enrich a contact with OSINT data.
-    If no name provided, enriches the last mentioned contact.
+    /enrich [contact_name] - Step 1: Search for potential profiles.
     """
     if not await rate_limit_middleware(update, context):
         return
@@ -51,153 +50,128 @@ async def enrich_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         contact = None
 
         if query:
-            # Search for contact by name
             contacts = await contact_service.find_contacts(db_user.id, query)
             if not contacts:
-                await update.message.reply_text(
-                    f"❌ Контакт '{query}' не найден.\n"
-                    "Используй /find для поиска контактов."
-                )
+                await update.message.reply_text(f"❌ Контакт '{query}' не найден.")
                 return
-
+            
             if len(contacts) > 1:
-                # Show selection buttons
+                # Ambiguous contact name
                 keyboard = []
                 for c in contacts[:5]:
-                    name_display = c.name
-                    if c.company:
-                        name_display += f" ({c.company})"
-                    keyboard.append([
-                        InlineKeyboardButton(
-                            f"🔍 {name_display}",
-                            callback_data=f"enrich_{c.id}"
-                        )
-                    ])
-
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_text(
-                    f"Найдено {len(contacts)} контактов. Выбери кого обогатить:",
-                    reply_markup=reply_markup
-                )
+                    keyboard.append([InlineKeyboardButton(f"🔍 {c.name} ({c.company or 'No Company'})", callback_data=f"enrich_start_{c.id}")])
+                await update.message.reply_text("Уточни контакт:", reply_markup=InlineKeyboardMarkup(keyboard))
                 return
-
+                
             contact = contacts[0]
         else:
-            # Try to get last contact from context
-            last_contact_id = context.user_data.get("last_contact_id")
-            last_voice_id = context.user_data.get("last_voice_id")
-
-            contact_id = last_contact_id or last_voice_id
-            if contact_id:
-                contact = await session.get(Contact, contact_id)
+            # Last mentioned
+            last_contact_id = context.user_data.get("last_contact_id") or context.user_data.get("last_voice_id")
+            if last_contact_id:
+                contact = await session.get(Contact, last_contact_id)
 
             if not contact:
-                await update.message.reply_text(
-                    "❓ Укажи имя контакта для обогащения.\n"
-                    "Пример: `/enrich Иван Петров`",
-                    parse_mode="Markdown"
-                )
+                await update.message.reply_text("❓ Кого обогатить? Напиши `/enrich Имя`")
                 return
 
-        # Perform enrichment
-        status_msg = await update.message.reply_text(
-            f"🔍 Ищу публичную информацию о *{contact.name}*...\n"
-            "_Это может занять несколько секунд_",
+        # Start Search
+        msg = await update.message.reply_text(f"🕵️‍♂️ Ищу профили *{contact.name}*...", parse_mode="Markdown")
+        
+        candidates = await osint_service.search_potential_profiles(contact.id)
+        
+        if not candidates:
+            await msg.edit_text(f"🤷‍♂️ Не нашел профилей LinkedIn для *{contact.name}*.\nПопробуй добавить ссылку вручную через редактирование профиля.", parse_mode="Markdown")
+            return
+
+        # Store candidates in user_data to retrieve URL later
+        # key: enrich_candidates_{contact_id}
+        context.user_data[f"enrich_candidates_{contact.id}"] = candidates
+        
+        keyboard = []
+        for idx, cand in enumerate(candidates[:5]):
+            # Button: "Name - Role"
+            btn_text = cand['name'][:40] 
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"enrich_select_{contact.id}_{idx}")])
+        
+        keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel_enrich")])
+
+        await msg.edit_text(
+            f"🔎 Нашел {len(candidates)} профилей для *{contact.name}*.\nВыберите правильный:",
+            reply_markup=InlineKeyboardMarkup(keyboard),
             parse_mode="Markdown"
         )
 
-        try:
-            result = await osint_service.enrich_contact(contact.id)
-
-            if result["status"] == "success":
-                formatted = format_osint_data(result["data"])
-                await status_msg.edit_text(
-                    f"✅ *{contact.name}* — информация обновлена!\n\n"
-                    f"{formatted}",
-                    parse_mode="Markdown",
-                    disable_web_page_preview=True
-                )
-            elif result["status"] == "cached":
-                formatted = format_osint_data(result["data"])
-                await status_msg.edit_text(
-                    f"💾 *{contact.name}* — уже обогащён\n\n"
-                    f"{formatted}\n\n"
-                    "_Используй_ `/enrich {contact.name} --force` _для повторного поиска_",
-                    parse_mode="Markdown",
-                    disable_web_page_preview=True
-                )
-            elif result["status"] == "no_results":
-                await status_msg.edit_text(
-                    f"ℹ️ *{contact.name}*\n\n"
-                    "Публичная информация не найдена.\n"
-                    "Попробуй уточнить компанию или добавить LinkedIn вручную.",
-                    parse_mode="Markdown"
-                )
-            else:
-                await status_msg.edit_text(
-                    f"❌ Ошибка: {result.get('message', 'Unknown error')}"
-                )
-
-        except Exception as e:
-            logger.exception(f"Error enriching contact: {e}")
-            await status_msg.edit_text(
-                "❌ Произошла ошибка при обогащении. Попробуй позже."
-            )
-
 
 async def enrich_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle enrichment button callback."""
+    """Handle selection of a profile."""
     query = update.callback_query
     await query.answer()
-
-    if not query.data.startswith("enrich_"):
+    
+    data = query.data
+    
+    if data == "cancel_enrich":
+        await query.edit_message_text("❌ Обогащение отменено.")
         return
 
-    contact_id = query.data[7:]  # Strip "enrich_"
-    user = update.effective_user
-
-    await query.edit_message_text("🔍 Ищу публичную информацию...")
-
-    try:
+    if data.startswith("enrich_start_"):
+        # Selected contact from ambiguous list, restart search flow
+        contact_id = data.split("_")[2]
+        # Recursively call search logic (simulating command)
+        # But we need fresh session. Easier to just tell user to click again or refactor.
+        # Let's just trigger the search here.
         async with AsyncSessionLocal() as session:
-            # Verify user owns this contact
-            contact = await session.get(Contact, contact_id)
-            if not contact:
-                await query.edit_message_text("❌ Контакт не найден.")
-                return
+             contact = await session.get(Contact, contact_id)
+             if contact:
+                 # Clean way: redirect to search logic, but we need to Duplicate code slightly or split func
+                 # For brevity, let's just edit message "Searching..." and call search_potential_profiles
+                 osint_service = OSINTService(session)
+                 await query.edit_message_text(f"🕵️‍♂️ Ищу профили *{contact.name}*...", parse_mode="Markdown")
+                 candidates = await osint_service.search_potential_profiles(contact.id)
+                 if not candidates:
+                     await query.edit_message_text("🤷‍♂️ Профили не найдены.")
+                     return
+                 
+                 context.user_data[f"enrich_candidates_{contact.id}"] = candidates
+                 keyboard = [[InlineKeyboardButton(c['name'][:40], callback_data=f"enrich_select_{contact.id}_{i}")] for i, c in enumerate(candidates[:5])]
+                 keyboard.append([InlineKeyboardButton("❌ Отмена", callback_data="cancel_enrich")])
+                 await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(keyboard))
+                 await query.edit_message_text(f"🔎 Нашел профили для *{contact.name}*. Выбери:", reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+        return
 
-            user_service = UserService(session)
-            db_user = await user_service.get_or_create_user(user.id)
+    if data.startswith("enrich_select_"):
+        # User selected a specific profile index
+        parts = data.split("_")
+        contact_id = parts[2]
+        index = int(parts[3])
+        
+        candidates = context.user_data.get(f"enrich_candidates_{contact_id}")
+        if not candidates or index >= len(candidates):
+            await query.edit_message_text("⚠️ Данные устарели. Повторите поиск через /enrich.")
+            return
 
-            if contact.user_id != db_user.id:
-                await query.edit_message_text("❌ У тебя нет доступа к этому контакту.")
-                return
-
+        selected_candidate = candidates[index]
+        linkedin_url = selected_candidate["url"]
+        
+        await query.edit_message_text(f"⏳ Анализирую профиль: {linkedin_url}\n_Это займет 10-20 секунд..._", parse_mode="Markdown")
+        
+        async with AsyncSessionLocal() as session:
             osint_service = OSINTService(session)
-            result = await osint_service.enrich_contact(uuid.UUID(contact_id))
-
-            if result["status"] == "success":
-                formatted = format_osint_data(result["data"])
-                await query.edit_message_text(
-                    f"✅ *{contact.name}* — информация обновлена!\n\n"
-                    f"{formatted}",
-                    parse_mode="Markdown",
-                    disable_web_page_preview=True
-                )
-            elif result["status"] == "no_results":
-                await query.edit_message_text(
-                    f"ℹ️ *{contact.name}*\n\n"
-                    "Публичная информация не найдена.",
-                    parse_mode="Markdown"
-                )
-            else:
-                await query.edit_message_text(
-                    f"❌ {result.get('message', 'Ошибка')}"
-                )
-
-    except Exception as e:
-        logger.exception(f"Error in enrich callback: {e}")
-        await query.edit_message_text("❌ Произошла ошибка.")
+            try:
+                result = await osint_service.enrich_contact_final(uuid.UUID(contact_id), linkedin_url)
+                
+                if result["status"] == "success":
+                    formatted = format_osint_data(result["data"])
+                    await query.edit_message_text(
+                        f"✅ Информация обновлена!\n\n{formatted}",
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True
+                    )
+                else:
+                    await query.edit_message_text(f"❌ Ошибка: {result.get('message')}")
+                    
+            except Exception as e:
+                logger.exception(f"Deep enrich error: {e}")
+                await query.edit_message_text("❌ Произошла ошибка при анализе профиля.")
 
 
 async def show_osint_data(update: Update, context: ContextTypes.DEFAULT_TYPE):

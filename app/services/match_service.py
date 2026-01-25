@@ -15,6 +15,47 @@ class MatchService:
         self.session = session
         self.gemini = GeminiService()
 
+    def _format_contact_context(self, contact: Contact) -> str:
+        """
+        Create a rich text representation of the contact for AI matching,
+        combining DB fields and OSINT enrichment.
+        """
+        # Basic info
+        lines = [
+            f"ID: {contact.id}",
+            f"Name: {contact.name}",
+            f"Company: {contact.company}",
+            f"Role: {contact.role}",
+        ]
+        
+        if contact.what_looking_for:
+            lines.append(f"Looking for: {contact.what_looking_for}")
+        if contact.can_help_with:
+            lines.append(f"Can help with: {contact.can_help_with}")
+            
+        # OSINT Enrichment
+        if contact.osint_data:
+            osint = contact.osint_data
+            
+            # Add extended career info
+            career = osint.get("career", {})
+            current = career.get("current", {})
+            if current and current.get("description"):
+                lines.append(f"Role Description: {current['description']}")
+            
+            # Keywords/Skills from keywords field if we calculate them, or just raw interests
+            personal = osint.get("personal", {})
+            if personal.get("interests"):
+                lines.append(f"Interests: {', '.join(personal['interests'])}")
+            
+            # Add recent publications titles as context for expertise
+            pubs = osint.get("publications", [])
+            if pubs:
+                titles = [p['title'] for p in pubs[:3] if p.get('title')]
+                lines.append(f"Content content/Publications: {'; '.join(titles)}")
+
+        return "\n".join(lines)
+
     async def get_user_matches(self, contact: Contact, user: User) -> Dict[str, Any]:
         """
         Find matches between a new contact and the user's profile.
@@ -24,7 +65,7 @@ class MatchService:
             return {"is_match": False, "match_score": 0, "synergy_summary": "Профиль пользователя не заполнен."}
 
         profile_a = json.dumps(user.profile_data, ensure_ascii=False)
-        profile_b = f"Name: {contact.name}\nCompany: {contact.company}\nRole: {contact.role}\nLooking for: {contact.what_looking_for}\nCan help with: {contact.can_help_with}"
+        profile_b = self._format_contact_context(contact)
         
         prompt = self.gemini.get_prompt("find_matches")
         prompt = prompt.replace("{profile_a}", profile_a).replace("{profile_b}", profile_b)
@@ -51,17 +92,17 @@ class MatchService:
         other_contacts = result.scalars().all()
         
         matches = []
-        # To avoid too many API calls, we might want to batch this or use a different approach.
-        # For now, let's just do it for the most recent potential ones if they have 'looking_for' or 'can_help'
-        potential_peers = [c for c in other_contacts if c.what_looking_for or c.can_help_with]
+        # Optimization: Only match against people who have some bio/needs or enrich data
+        potential_peers = [c for c in other_contacts if c.what_looking_for or c.can_help_with or c.osint_data]
         
+        contact_profile = self._format_contact_context(contact)
+
         # Limit to top 5 to avoid API hitting limits in one go
         for peer in potential_peers[:5]:
-             profile_a = f"Name: {contact.name}\nLooking for: {contact.what_looking_for}\nCan help with: {contact.can_help_with}"
-             profile_b = f"Name: {peer.name}\nLooking for: {peer.what_looking_for}\nCan help with: {peer.can_help_with}"
+             peer_profile = self._format_contact_context(peer)
              
              prompt = self.gemini.get_prompt("find_matches")
-             prompt = prompt.replace("{profile_a}", profile_a).replace("{profile_b}", profile_b)
+             prompt = prompt.replace("{profile_a}", contact_profile).replace("{profile_b}", peer_profile)
              match_data = await self.gemini.extract_contact_data(prompt_template=prompt)
              
              if match_data.get("is_match") and match_data.get("match_score", 0) > 60:
@@ -83,8 +124,8 @@ class MatchService:
         contacts = result.scalars().all()
         
         contact_list_str = ""
-        for i, c in enumerate(contacts):
-            contact_list_str += f"{i}. ID: {c.id}, Name: {c.name}, Company: {c.company}, Role: {c.role}, Looking for: {c.what_looking_for}, Can help with: {c.can_help_with}, Events: {c.event_name}\n"
+        for c in contacts:
+            contact_list_str += self._format_contact_context(c) + "\n---\n"
 
         prompt = f"""
         Act as a professional networking assistant. 
