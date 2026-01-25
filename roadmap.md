@@ -33,14 +33,14 @@ Based on [OpenSpec Specification](context.md).
 - [x] Task 2.7: Персонализация под конкретного контакта
 
 ## Phase 3: Follow-up
-- [ ] Task 3.1: Reminder model + ReminderService
-- [ ] Task 3.2: Celery setup + periodic tasks
-- [ ] Task 3.3: Auto-reminder extraction из голосового
-- [ ] Task 3.4: Manual reminder creation UI
-- [ ] Task 3.5: Reminder notification sender
-- [ ] Task 3.6: Snooze/complete handlers
+- [x] Task 3.1: Reminder model + ReminderService
+- [x] Task 3.2: APScheduler setup + periodic tasks
+- [x] Task 3.3: Auto-reminder extraction из голосового
+- [x] Task 3.4: Manual reminder creation UI (via text extraction)
+- [x] Task 3.5: Reminder notification sender
+- [x] Task 3.6: Snooze/complete handlers
 - [ ] Task 3.7: Follow-up message generation
-- [ ] Task 3.8: /reminders handler
+- [x] Task 3.8: /reminders handler
 
 ## Phase 4: Matching & Insights
 - [ ] Task 4.1: MatchService — поиск синергий

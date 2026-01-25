@@ -3,7 +3,13 @@ from sqlalchemy import select, or_
 from app.models.contact import Contact, ContactStatus
 from app.models.interaction import Interaction, InteractionType
 from typing import Dict, Any, List
+from app.services.reminder_service import ReminderService
+from datetime import datetime, timedelta
+import dateparser
 import uuid
+import logging
+
+logger = logging.getLogger(__name__)
 
 class ContactService:
     def __init__(self, session: AsyncSession):
@@ -46,6 +52,32 @@ class ContactService:
         self.session.add(interaction)
         await self.session.commit()
         await self.session.refresh(contact)
+        
+        # Process Reminders if extracted
+        if data.get("reminders"):
+            reminder_service = ReminderService(self.session)
+            for rem_data in data["reminders"]:
+                try:
+                    due_date_str = rem_data.get("due_date")
+                    title = rem_data.get("title")
+                    if due_date_str and title:
+                        # Try parsing date using dateparser
+                        due_date = dateparser.parse(due_date_str, settings={'PREFER_DATES_FROM': 'future'})
+                        
+                        # Default to tomorrow if parsing fails or returns past
+                        if not due_date or due_date < datetime.now():
+                             due_date = datetime.now() + timedelta(days=1)
+                             
+                        await reminder_service.create_reminder(
+                            user_id=user_id,
+                            contact_id=contact.id,
+                            title=title,
+                            due_at=due_date,
+                            description=rem_data.get("description")
+                        )
+                except Exception as e:
+                    logger.error(f"Failed to create extracted reminder: {e}")
+
         return contact
 
     async def get_recent_contacts(self, user_id: uuid.UUID, limit: int = 10, offset: int = 0) -> List[Contact]:

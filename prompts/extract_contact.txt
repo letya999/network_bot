@@ -16,8 +16,13 @@ Return a valid JSON object with the following fields:
 - notes: (string or null) Any other relevant details.
 - raw_transcript: (string) The full transcription of the voice/text input. Verify spelling of names and companies.
 
+- reminders: (array of objects) Any reminders mentioned. Each object should have:
+  - title: (string) What to do.
+  - due_date: (string or null) When to do it (ISO 8601 format if possible, or relative logic).
+  - description: (string or null) Details.
+
 Do not use Markdown formatting (like brackets ```json or ```). Return ONLY the raw JSON string.
 If information is missing, use null or empty array.
 If the input is in Russian, the output values should be in Russian (except specific identifiers like emails/handles).
-Focus on HIGH ACCURACY for names and companies. If a name sounds like "NDDF" write "NDDF", don't guess "Wandle" unless context implies.
-Correct technical terms and jargon to their standard spelling (e.g. use "Кастдев" instead of "Каздев", "Frontend" instead of "Фронтэнд").
+Focus on HIGH ACCURACY for names and companies.
+Correct technical terms and jargon to their standard spelling.

@@ -18,6 +18,9 @@ from app.utils.text_parser import extract_contact_info
 from app.bot.rate_limiter import rate_limit_middleware
 from app.services.profile_service import ProfileService
 from app.services.card_service import CardService
+from app.services.reminder_service import ReminderService
+import dateparser
+from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -183,10 +186,52 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             last_contact_id = context.user_data.get("last_contact_id")
 
             contact = None
+            is_reminder_only = False
+            
+            # Check if it's just a reminder (no name, no company, but has reminders)
+            name_check = data.get("name", "").lower()
+            has_identity = name_check not in ["неизвестно", "unknown", "test user"] and name_check != ""
+            has_company = bool(data.get("company"))
+            has_reminders = bool(data.get("reminders"))
+            
+            if not has_identity and not has_company and has_reminders:
+                is_reminder_only = True
+            
+            # If merging with context, we always treat as contact update
             if last_contact_id and (now - last_contact_time < 300):
                 contact = await contact_service.update_contact(last_contact_id, data)
                 await status_msg.edit_text("🔗 Объединено с недавним контактом!")
                 context.user_data.pop("last_contact_id", None)
+            
+            elif is_reminder_only:
+                # Standalone Reminder Logic
+                reminder_service = ReminderService(session)
+                count = 0
+                for rem in data["reminders"]:
+                    try:
+                        due_date_str = rem.get("due_date")
+                        due_date = None
+                        if due_date_str:
+                             due_date = dateparser.parse(due_date_str, settings={'PREFER_DATES_FROM': 'future'})
+                        if not due_date or due_date < datetime.now():
+                             due_date = datetime.now() + timedelta(days=1)
+                             
+                        await reminder_service.create_reminder(
+                            user_id=db_user.id,
+                            title=rem.get("title", "Напоминание"),
+                            due_at=due_date,
+                            description=rem.get("description"),
+                            # No contact_id
+                        )
+                        count += 1
+                    except Exception as e:
+                        logger.error(f"Error creating reminder: {e}")
+                
+                await status_msg.delete()
+                status_msg_deleted = True
+                await update.message.reply_text(f"✅ Создано напоминаний: {count}")
+                return # Exit early, don't show contact card
+
             else:
                 contact = await contact_service.create_contact(db_user.id, data)
                 context.user_data["last_voice_id"] = contact.id
@@ -194,8 +239,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await status_msg.delete()
                 status_msg_deleted = True  # Mark as deleted
 
-            card = format_card(contact)
-            await update.message.reply_text(card)
+            if contact:
+                card = format_card(contact)
+                await update.message.reply_text(card)
 
     except Exception as e:
         logger.exception("Error handling voice")
@@ -452,8 +498,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         if re.match(r'^@?[a-zA-Z0-9_]{3,32}$', clean_text):
             regex_data = {"telegram_username": clean_text.lstrip('@')}
 
+    # Relaxed Check: If not regex_data, we still might want to process for Reminders
+    # But we don't want to process EVERY single message.
+    # For now, let's proceed if text looks like a potential command/request.
+    # Or simply remove the check and let Gemini decide (but this is expensive).
+    # Since we added "Remind me..." support, let's allow flow to proceed.
+    # We will initialize regex_data to empty if None so subsequent checks don't fail.
     if not regex_data:
-        return
+        regex_data = {}
 
     # VALIDATION: Check Telegram Username if present
     if regex_data.get('telegram_username'):
@@ -544,11 +596,51 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         contact = None
         
         # Scenario: Voice -> Text (Link)
+        # Scenario: Voice -> Text (Link)
         if active_id:
             contact = await contact_service.update_contact(active_id, data)
             await update.message.reply_text("🔗 Информация добавлена к контакту!")
             # We keep context open for more chaining
         else:
+            # Check for standalone reminder
+            is_reminder_only = False
+            name_check = data.get("name", "").lower()
+            has_identity = name_check not in ["неизвестно", "unknown", "test user"] and name_check != ""
+            has_company = bool(data.get("company"))
+            has_reminders = bool(data.get("reminders"))
+            
+            # For Text, "extract_contact_info" regex might have failed but Gemini extracted reminders
+            # If regex_data has basically nothing but Gemini found reminders, we assume reminder.
+            if not has_identity and not has_company and has_reminders and not regex_data.get('phone') and not regex_data.get('telegram_username'):
+                is_reminder_only = True
+                
+            if is_reminder_only:
+                 # Standalone Reminder Logic
+                reminder_service = ReminderService(session)
+                count = 0
+                for rem in data["reminders"]:
+                    try:
+                        due_date_str = rem.get("due_date")
+                        due_date = None
+                        if due_date_str:
+                             due_date = dateparser.parse(due_date_str, settings={'PREFER_DATES_FROM': 'future'})
+                        if not due_date or due_date < datetime.now():
+                             due_date = datetime.now() + timedelta(days=1)
+                             
+                        await reminder_service.create_reminder(
+                            user_id=db_user.id,
+                            title=rem.get("title", "Напоминание"),
+                            due_at=due_date,
+                            description=rem.get("description"),
+                            # No contact_id
+                        )
+                        count += 1
+                    except Exception as e:
+                        logger.error(f"Error creating reminder: {e}")
+                
+                await update.message.reply_text(f"✅ Создано напоминаний: {count}")
+                return # Exit
+
             # Scenario: Text (Link) -> pending Voice
             # Or just a standalone text contact
             # Include text as note if it's more than just the handle?

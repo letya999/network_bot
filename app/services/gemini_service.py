@@ -3,7 +3,8 @@ from app.core.config import settings
 import json
 import os
 from typing import Dict, Any, Optional
-
+from datetime import datetime
+import importlib.metadata
 import logging
 
 logger = logging.getLogger(__name__)
@@ -35,7 +36,15 @@ class GeminiService:
         else:
             prompt_text = self.get_prompt("extract_contact")
         
-        content = [prompt_text]
+        # Prepare context with current time
+        current_time_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        context_str = f"Current Date/Time: {current_time_str}\n\n"
+        
+        # We need to prepend this to the prompt text OR add it as a separate text part.
+        # Adding to prompt text is safer as it acts as system instruction.
+        full_prompt_text = f"{context_str}{prompt_text}"
+        
+        content = [full_prompt_text]
         
         # Security: Validate audio file path
         if audio_path:

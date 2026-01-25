@@ -2,6 +2,7 @@ import logging
 from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, TypeHandler, ConversationHandler, CallbackQueryHandler
 from app.core.config import settings
+from app.core.scheduler import start_scheduler, shutdown_scheduler
 from app.bot.handlers import (
     start, handle_voice, handle_contact, list_contacts, find_contact, export_contacts, handle_text_message,
     show_prompt, start_edit_prompt, save_prompt, cancel_prompt_edit, reset_prompt, WAITING_FOR_PROMPT,
@@ -11,6 +12,7 @@ from app.bot.profile_handlers import (
     show_profile, handle_edit_callback, save_profile_value, cancel_edit, 
     SELECT_FIELD, INPUT_VALUE, send_card, share_card
 )
+from app.bot.reminder_handlers import list_reminders, reminder_action_callback
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +31,19 @@ async def post_init(application):
         BotCommand("export", "Экспорт контактов в CSV"),
         BotCommand("prompt", "Показать текущий промпт"),
         BotCommand("edit_prompt", "Изменить промпт"),
+        BotCommand("reminders", "Мои напоминания"),
     ]
     await bot.set_my_commands(commands)
     logger.info(f"Bot commands set: {commands}")
+    
+    # Start Scheduler
+    await start_scheduler()
+
+async def post_shutdown(application):
+    """
+    Post shutdown hook to stop scheduler.
+    """
+    await shutdown_scheduler()
 
 async def log_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -65,7 +77,7 @@ def create_bot():
        logger.error("No TELEGRAM_BOT_TOKEN found. Bot will not start.")
        return None
        
-    app = ApplicationBuilder().token(settings.TELEGRAM_BOT_TOKEN).post_init(post_init).build()
+    app = ApplicationBuilder().token(settings.TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
     
     # Log all updates
     app.add_handler(TypeHandler(Update, log_update), group=-1)
@@ -96,6 +108,10 @@ def create_bot():
     )
     app.add_handler(profile_conv)
     
+    # Reminders
+    app.add_handler(CommandHandler("reminders", list_reminders))
+    app.add_handler(CallbackQueryHandler(reminder_action_callback, pattern="^rem_"))
+
     app.add_handler(CommandHandler("card", send_card))
     app.add_handler(CommandHandler("share", share_card))
     
