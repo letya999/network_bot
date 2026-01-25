@@ -40,7 +40,7 @@ Based on [OpenSpec Specification](context.md).
 
 ---
 
-## Phase 3: Follow-up ⏳
+## Phase 3: Follow-up ✅
 - [x] Task 3.1: Reminder model + ReminderService
 - [x] Task 3.2: APScheduler setup + periodic tasks
 - [x] Task 3.3: Auto-reminder extraction из голосового
@@ -112,8 +112,8 @@ Based on [OpenSpec Specification](context.md).
 #### 4.1: Инфраструктура
 - [ ] Task 4.1.1: Google Custom Search integration
 - [ ] Task 4.1.2: OSINTService — orchestration обогащения
-- [ ] Task 4.1.3: Расширение модели Contact — osint_data JSONB структура
-- [ ] Task 4.1.4: Миграция для новых полей
+- [x] Task 4.1.3: Расширение модели Contact — osint_data JSONB структура
+- [x] Task 4.1.4: Миграция для новых полей
 
 #### 4.2: Сбор данных
 - [ ] Task 4.2.1: LinkedIn search — карьера, образование, курсы, города
@@ -142,7 +142,7 @@ Based on [OpenSpec Specification](context.md).
 
 ---
 
-## Phase 5: Network Intelligence
+## Phase 5: Network Intelligence ✅
 
 AI-powered поиск пересечений и связей между контактами.
 
@@ -169,16 +169,16 @@ AI-powered поиск пересечений и связей между конт
 ### Задачи
 
 #### 5.1: Расширение extraction
-- [ ] Task 5.1.1: Обновить промпт extract_contact.txt:
+- [x] Task 5.1.1: Обновить промпт extract_contact.txt:
   - `mentioned_connections`: [{name, relationship, company}]
   - `mentioned_companies`: [] — компании из речи
   - `mentioned_places`: [] — города, страны из речи
-- [ ] Task 5.1.2: Сохранение в attributes JSONB
+- [x] Task 5.1.2: Сохранение в attributes JSONB
 
 #### 5.2: Overlaps — пересечения контакта с CRM
-- [ ] Task 5.2.1: Промпт `prompts/find_overlaps.txt`
-- [ ] Task 5.2.2: `/overlaps {contact}` handler
-- [ ] Task 5.2.3: Логика поиска пересечений:
+- [x] Task 5.2.1: Промпт `prompts/find_overlaps.txt`
+- [x] Task 5.2.2: `/overlaps {contact}` handler (реализовано как `/matches`)
+- [x] Task 5.2.3: Логика поиска пересечений:
   - Та же текущая компания
   - Общие previous_companies
   - Общие университеты
@@ -190,9 +190,9 @@ AI-powered поиск пересечений и связей между конт
   - Упоминания друг друга в raw_transcript
 
 #### 5.3: Common — что общего со мной
-- [ ] Task 5.3.1: Промпт `prompts/find_common.txt`
-- [ ] Task 5.3.2: `/common {contact}` handler
-- [ ] Task 5.3.3: Сравнение с профилем пользователя:
+- [x] Task 5.3.1: Промпт `prompts/find_common.txt`
+- [x] Task 5.3.2: `/common {contact}` handler (реализовано как `/matches`)
+- [x] Task 5.3.3: Сравнение с профилем пользователя:
   - Общие компании (работали в одной)
   - Общие университеты
   - Общие курсы
@@ -203,20 +203,20 @@ AI-powered поиск пересечений и связей между конт
   - Talking points на основе всего вышеперечисленного
 
 #### 5.4: Расширение профиля пользователя
-- [ ] Task 5.4.1: Добавить в профиль пользователя:
+- [x] Task 5.4.1: Добавить в профиль пользователя:
   - `education`: [{university, degree, year}]
   - `courses`: []
   - `lived_in`: []
   - `birthplace`: ""
-- [ ] Task 5.4.2: `/profile` — редактирование новых полей
+- [x] Task 5.4.2: `/profile` — редактирование новых полей
 
 #### 5.5: Auto-suggestions
-- [ ] Task 5.5.1: После сохранения контакта — показать топ-3 пересечения
-- [ ] Task 5.5.2: Inline кнопки [Подробнее] [Что у нас общего]
+- [x] Task 5.5.1: После сохранения контакта — показать топ-3 пересечения
+- [x] Task 5.5.2: Inline кнопки [Подробнее] [Что у нас общего]
 
 #### 5.6: Semantic search
-- [ ] Task 5.6.1: Промпт `prompts/semantic_search.txt`
-- [ ] Task 5.6.2: Улучшенный `/find` через Gemini:
+- [x] Task 5.6.1: Промпт `prompts/semantic_search.txt`
+- [x] Task 5.6.2: Улучшенный `/find` через Gemini:
   - `/find кто учился в КазНУ`
   - `/find кто жил в Москве`
   - `/find кто может помочь с инвестициями`
@@ -282,7 +282,7 @@ AI-powered поиск пересечений и связей между конт
 
 ---
 
-## Phase 6: Analytics & Insights
+## Phase 6: Analytics & Insights ✅
 
 Статистика и аналитика нетворкинга.
 
@@ -291,13 +291,13 @@ AI-powered поиск пересечений и связей между конт
 - Лучше после Phase 5 (больше данных для инсайтов)
 
 ### Задачи
-- [ ] Task 6.1: AnalyticsService — агрегация статистики
-- [ ] Task 6.2: `/stats` handler — общая статистика
-- [ ] Task 6.3: `/stats {period}` — статистика за период (месяц, квартал, год)
-- [ ] Task 6.4: Breakdown по источникам (events)
-- [ ] Task 6.5: Breakdown по ролям/компаниям/индустриям
-- [ ] Task 6.6: Воронка: контакты → follow-up → ответы → встречи
-- [ ] Task 6.7: AI-инсайты и рекомендации
+- [x] Task 6.1: AnalyticsService — агрегация статистики
+- [x] Task 6.2: `/stats` handler — общая статистика
+- [x] Task 6.3: `/stats {period}` — статистика за период (месяц, квартал, год)
+- [x] Task 6.4: Breakdown по источникам (events)
+- [x] Task 6.5: Breakdown по ролям/компаниям/индустриям
+- [x] Task 6.6: Воронка: контакты → follow-up → ответы → встречи
+- [x] Task 6.7: AI-инсайты и рекомендации
 
 ### Пример вывода
 ```
