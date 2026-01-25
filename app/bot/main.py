@@ -6,7 +6,7 @@ from app.core.scheduler import start_scheduler, shutdown_scheduler
 from app.bot.handlers import (
     start, handle_voice, handle_contact, list_contacts, find_contact, export_contacts, handle_text_message,
     show_prompt, start_edit_prompt, save_prompt, cancel_prompt_edit, reset_prompt, WAITING_FOR_PROMPT,
-    generate_card_callback
+    generate_card_callback, set_event_mode
 )
 from app.bot.profile_handlers import (
     show_profile, handle_edit_callback, save_profile_value, cancel_edit, 
@@ -36,6 +36,7 @@ async def post_init(application):
         BotCommand("reminders", "Мои напоминания"),
         BotCommand("stats", "Статистика нетворкинга"),
         BotCommand("matches", "Найти синергии"),
+        BotCommand("event", "Режим мероприятия (Context Mode)"),
     ]
     await bot.set_my_commands(commands)
     logger.info(f"Bot commands set: {commands}")
@@ -94,6 +95,7 @@ def create_bot():
     app.add_handler(CommandHandler("export", export_contacts))
     app.add_handler(CommandHandler("prompt", show_prompt))
     app.add_handler(CommandHandler("reset_prompt", reset_prompt))
+    app.add_handler(CommandHandler("event", set_event_mode))
     
     prompt_conv = ConversationHandler(
         entry_points=[CommandHandler("edit_prompt", start_edit_prompt)],

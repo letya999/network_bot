@@ -25,6 +25,19 @@ from app.bot.match_handlers import notify_match_if_any
 
 logger = logging.getLogger(__name__)
 
+def _apply_event_context(data: dict, context: ContextTypes.DEFAULT_TYPE):
+    """Helper to inject current event mode into contact data."""
+    current_event = context.user_data.get("current_event")
+    if current_event:
+        existing = data.get("event_name")
+        if existing:
+             # Avoid duplication if identical or contained
+             if current_event.lower() not in existing.lower():
+                 data["event_name"] = f"{current_event} · {existing}"
+        else:
+            data["event_name"] = current_event
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     logger.info(f"User {user.id} ({user.username}) started the bot.")
@@ -179,6 +192,10 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt_to_use = db_user.custom_prompt
             
             data = await gemini.extract_contact_data(audio_path=file_path, prompt_template=prompt_to_use)
+            
+            # Apply Event Mode
+            _apply_event_context(data, context)
+            
             contact_service = ContactService(session)
 
             # Merge logic
@@ -283,6 +300,10 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "notes": "Shared Telegram contact",
         "telegram_username": None # Contact object doesn't have username typically
     }
+    
+    # Apply Event Mode
+    _apply_event_context(data, context)
+
     
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
@@ -596,6 +617,10 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         gemini = GeminiService()
         data = await gemini.extract_contact_data(text=text, prompt_template=db_user.custom_prompt)
         
+        # Apply Event Mode
+        _apply_event_context(data, context)
+
+        
         # Ensure our hard-won identifier is present
         if 'telegram_username' in regex_data and not data.get('telegram_username'):
             data['telegram_username'] = regex_data['telegram_username']
@@ -724,3 +749,25 @@ async def reset_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
     await update.message.reply_text("🔄 Промпт сброшен на стандартный.")
 
+
+async def set_event_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = " ".join(context.args).strip()
+    
+    if not query:
+        # Check if active
+        current = context.user_data.get("current_event")
+        if current:
+             await update.message.reply_text(f"📍 Текущий режим мероприятия: **{current}**\nОтправь `/event stop` чтобы выключить.", parse_mode="Markdown")
+        else:
+             await update.message.reply_text("ℹ️ Используй: `/event <Название>` для включения режима.\nПример: `/event ProductCamp 2025`", parse_mode="Markdown")
+        return
+
+    if query.lower() in ["stop", "off", "cancel", "стоп", "выкл"]:
+        old = context.user_data.pop("current_event", None)
+        if old:
+            await update.message.reply_text(f"🛑 Режим мероприятия **{old}** выключен.", parse_mode="Markdown")
+        else:
+            await update.message.reply_text("🤷 Режим мероприятия не был включен.")
+    else:
+        context.user_data["current_event"] = query
+        await update.message.reply_text(f"✅ Режим мероприятия включен: **{query}**.\nВсе новые контакты будут привязаны к нему.", parse_mode="Markdown")
