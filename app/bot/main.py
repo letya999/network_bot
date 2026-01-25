@@ -15,6 +15,11 @@ from app.bot.profile_handlers import (
 from app.bot.reminder_handlers import list_reminders, reminder_action_callback
 from app.bot.analytics_handlers import show_stats
 from app.bot.match_handlers import find_matches_command, semantic_search_handler, semantic_search_callback
+from app.bot.osint_handlers import (
+    enrich_command, enrich_callback, show_osint_data,
+    start_import, handle_csv_import, cancel_import, WAITING_FOR_CSV,
+    enrichment_stats, batch_enrich_callback
+)
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +36,8 @@ async def post_init(application):
         BotCommand("list", "Показать список контактов"),
         BotCommand("find", "Найти контакт"),
         BotCommand("export", "Экспорт контактов в CSV"),
+        BotCommand("enrich", "Найти публичную информацию"),
+        BotCommand("import", "Импорт из LinkedIn CSV"),
         BotCommand("prompt", "Показать текущий промпт"),
         BotCommand("edit_prompt", "Изменить промпт"),
         BotCommand("reminders", "Мои напоминания"),
@@ -119,6 +126,23 @@ def create_bot():
     # Reminders
     app.add_handler(CommandHandler("reminders", list_reminders))
     app.add_handler(CallbackQueryHandler(reminder_action_callback, pattern="^rem_"))
+
+    # OSINT & Enrichment
+    app.add_handler(CommandHandler("enrich", enrich_command))
+    app.add_handler(CommandHandler("osint", show_osint_data))
+    app.add_handler(CommandHandler("enrich_stats", enrichment_stats))
+    app.add_handler(CallbackQueryHandler(enrich_callback, pattern="^enrich_"))
+    app.add_handler(CallbackQueryHandler(batch_enrich_callback, pattern="^batch_enrich$"))
+
+    # LinkedIn CSV Import
+    import_conv = ConversationHandler(
+        entry_points=[CommandHandler("import", start_import)],
+        states={
+            WAITING_FOR_CSV: [MessageHandler(filters.Document.ALL, handle_csv_import)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_import)]
+    )
+    app.add_handler(import_conv)
 
     app.add_handler(CommandHandler("card", send_card))
     app.add_handler(CommandHandler("share", share_card))

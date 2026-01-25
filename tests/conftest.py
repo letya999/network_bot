@@ -44,6 +44,7 @@ def mock_async_session_local(mock_session, monkeypatch):
         "app.bot.reminder_handlers.AsyncSessionLocal",
         "app.bot.analytics_handlers.AsyncSessionLocal",
         "app.bot.match_handlers.AsyncSessionLocal",
+        "app.bot.osint_handlers.AsyncSessionLocal",
     ]
     for target in targets:
         try:
