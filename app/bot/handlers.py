@@ -1,4 +1,5 @@
 import os
+import re
 import logging
 import time
 import uuid
@@ -6,6 +7,7 @@ import tempfile
 from pathlib import Path
 from telegram import Update
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, MessageHandler, filters
 from app.db.session import AsyncSessionLocal
 from app.services.user_service import UserService
@@ -60,18 +62,40 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 def format_card(contact):
-    text = f"✅ {contact.name}\n\n"
+    # Smart Name Display
+    name_display = contact.name
+    show_tg_line = True
+    
+    if contact.telegram_username and contact.name:
+        # Check for redundancy (Name == Nickname)
+        norm_name = re.sub(r'[\s_]', '', contact.name.lower())
+        norm_tg = re.sub(r'[\s_]', '', contact.telegram_username.lower().lstrip('@'))
+        
+        # If very similar, hide the separate 💬 line and link the name
+        if norm_name == norm_tg:
+             tg = contact.telegram_username.lstrip("@")
+             # Escape name for Markdown because it's inside []
+             safe_name = contact.name.replace("_", "\\_")
+             name_display = f"[{safe_name}](https://t.me/{tg})"
+             show_tg_line = False
+
+    text = f"✅ {name_display}\n\n"
     if contact.company:
         text += f"🏢 {contact.company}"
         if contact.role:
             text += f" · {contact.role}"
         text += "\n"
     if contact.phone:
-        text += f"📱 {contact.phone}\n"
-    if contact.telegram_username:
-        text += f"💬 {contact.telegram_username}\n"
+        # Simple sanitation for tel link
+        clean_phone = re.sub(r'[^\d+]', '', contact.phone)
+        text += f"📱 [{contact.phone}](tel:{clean_phone})\n"
+    if contact.telegram_username and show_tg_line:
+        tg = contact.telegram_username.lstrip("@")
+        # Ensure we escape underscores for Markdown to prevent broken formatting
+        safe_tg_url = f"https://t.me/{tg}".replace("_", "\\_")
+        text += f"💬 {safe_tg_url}\n"
     if contact.email:
-        text += f"📧 {contact.email}\n"
+        text += f"📧 [{contact.email}](mailto:{contact.email})\n"
     
     text += "\n"
     if contact.event_name:
@@ -214,17 +238,38 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
         
         contact_service = ContactService(session)
+
+        # Check for duplicates
+        existing = await contact_service.find_by_identifiers(db_user.id, phone=data['phone'])
         
         # Merge logic
         now = time.time()
         last_voice_time = context.user_data.get("last_voice_time", 0)
         last_voice_id = context.user_data.get("last_voice_id")
         
-        contact = None
+        active_id = None
         if last_voice_id and (now - last_voice_time < 300):
-            contact = await contact_service.update_contact(last_voice_id, data)
+            active_id = last_voice_id
+
+        if existing:
+             if not active_id or (active_id and str(existing.id) != str(active_id)):
+                await update.message.reply_text(
+                    f"⚠️ Этот контакт уже записан у: {existing.name}\n"
+                    f"Переключаю контекст на него."
+                )
+                context.user_data["last_contact_id"] = existing.id
+                context.user_data["last_contact_time"] = now
+                context.user_data.pop("last_voice_id", None)
+                
+                card = format_card(existing)
+                await update.message.reply_text(card)
+                return
+
+        contact = None
+        if active_id:
+            contact = await contact_service.update_contact(active_id, data)
             await update.message.reply_text("🔗 Объединено с голосовой заметкой!")
-            context.user_data.pop("last_voice_id", None)
+            # context.user_data.pop("last_voice_id", None) # Keep open for chaining?
         else:
             contact = await contact_service.create_contact(db_user.id, data)
             context.user_data["last_contact_id"] = contact.id
@@ -398,55 +443,125 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     text = update.message.text
     
-    # Regex Filter: Only process if looks like contact info
+    # 1. Regex Filter: Try standard extraction
     regex_data = extract_contact_info(text)
+    
+    # 2. Fallback: Check if it looks like a loose nickname
+    if not regex_data:
+        clean_text = text.strip()
+        if re.match(r'^@?[a-zA-Z0-9_]{3,32}$', clean_text):
+            regex_data = {"telegram_username": clean_text.lstrip('@')}
+
     if not regex_data:
         return
 
-    logger.info(f"Received text with contact info from user {user.id}. Processing with Gemini...")
-    
+    # VALIDATION: Check Telegram Username if present
+    if regex_data.get('telegram_username'):
+        tg_user = regex_data['telegram_username']
+        try:
+            # Try to fetch chat info to verify existence
+            chat = await context.bot.get_chat(chat_id=f"@{tg_user}")
+            # If successful, use the official username (fixes casing, etc)
+            if chat.username:
+                regex_data['telegram_username'] = chat.username
+            
+            # Also grab the name if we don't have one!
+            # Or always grab it? User said "name from contact is better".
+            # Let's populate 'name' key.
+            extracted_name = f"{chat.first_name} {chat.last_name or ''}".strip()
+            if extracted_name:
+                regex_data['name'] = extracted_name
+        except BadRequest:
+             await update.message.reply_text(
+                f"⚠️ Пользователь @{tg_user} не найден в Telegram (или скрыт).\n"
+                "Я сохраню этот ник, но ссылка может не работать."
+             )
+             # We still keep it, or move to notes? User said "указывай об этом явно".
+             # Keep it but we warned.
+        except Exception as e:
+            logger.warning(f"Error checking username {tg_user}: {e}")
+
+    logger.info(f"Received text with contact info from user {user.id}. Processing...")
+
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
         db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
-        
-        # Use Gemini for full extraction
-        gemini = GeminiService()
-        data = await gemini.extract_contact_data(text=text, prompt_template=db_user.custom_prompt)
-        
         contact_service = ContactService(session)
+
+        # 3. Check for DUPLICATES
+        # This solves: "if not assigned before... then add"
+        phone = regex_data.get('phone')
+        tg = regex_data.get('telegram_username')
         
-        # Merge logic
+        # We need to be careful: if we are editing an existing contact, we shouldn't "find" ourselves as a duplicate.
+        existing_contact = await contact_service.find_by_identifiers(db_user.id, phone, tg)
+        
+        # Determine Context (Who are we editing?)
         now = time.time()
         last_voice_time = context.user_data.get("last_voice_time", 0)
         last_voice_id = context.user_data.get("last_voice_id")
         
-        contact = None
-        # Scenario: Voice -> Text (Link)
+        last_contact_time = context.user_data.get("last_contact_time", 0)
+        last_contact_id = context.user_data.get("last_contact_id")
+        
+        active_id = None
         if last_voice_id and (now - last_voice_time < 300):
-            contact = await contact_service.update_contact(last_voice_id, data)
-            await update.message.reply_text("🔗 Информация добавлена к последнему контакту!")
-            # We don't clear last_voice_id immediately? Or we do? 
-            # Usually strict pairs, but maybe multiple links?
-            # Let's keep the context open for a bit?
-            # Existing logic in handle_contact pops it. lets follow that for consistency.
-            context.user_data.pop("last_voice_id", None)
+            active_id = last_voice_id
+        elif last_contact_id and (now - last_contact_time < 300):
+            active_id = last_contact_id
+
+        if existing_contact:
+            # If the found contact is NOT the one we are currently editing (active_id)
+            if not active_id or (active_id and str(existing_contact.id) != str(active_id)):
+                await update.message.reply_text(
+                    f"⚠️ Этот контакт уже записан у: {existing_contact.name}\n"
+                    f"Переключаю контекст на него."
+                )
+                # Switch context
+                context.user_data["last_contact_id"] = existing_contact.id
+                context.user_data["last_contact_time"] = now
+                # Clear voice id if it was orphaned? 
+                context.user_data.pop("last_voice_id", None)
+                
+                # Show the card
+                card = format_card(existing_contact)
+                await update.message.reply_text(card)
+                return
+            else:
+                # It matches our active contact (e.g. we sent phone, now sending handle). 
+                # Proceed to update.
+                pass
+
+        # 4. Extract Full Data (Gemini)
+        # Use Gemini to clean up names, etc.
+        gemini = GeminiService()
+        data = await gemini.extract_contact_data(text=text, prompt_template=db_user.custom_prompt)
+        
+        # Ensure our hard-won identifier is present
+        if 'telegram_username' in regex_data and not data.get('telegram_username'):
+            data['telegram_username'] = regex_data['telegram_username']
+            
+        contact = None
+        
+        # Scenario: Voice -> Text (Link)
+        if active_id:
+            contact = await contact_service.update_contact(active_id, data)
+            await update.message.reply_text("🔗 Информация добавлена к контакту!")
+            # We keep context open for more chaining
         else:
             # Scenario: Text (Link) -> pending Voice
             # Or just a standalone text contact
-            
-            # We might want to add existing notes if any?
-            # data parsing only extracts specific fields.
-            # If the user wrote "Here is his email: bob@example.com and he is a nice guy",
-            # our parser extracts email. The interaction notes could be the full text.
-            data["notes"] = text 
-            
+            # Include text as note if it's more than just the handle?
+            if 'notes' not in data and len(text) > 20: 
+                 data['notes'] = text
+
             contact = await contact_service.create_contact(db_user.id, data)
             
             # Set context so next voice can pick this up
             context.user_data["last_contact_id"] = contact.id
             context.user_data["last_contact_time"] = now
             
-            await update.message.reply_text("💾 Контакт сохранен (жду голосовое описание если есть...)")
+            await update.message.reply_text("💾 Контакт сохранен (жду голосовое описание или фото...)")
 
         card = format_card(contact)
         await update.message.reply_text(card)

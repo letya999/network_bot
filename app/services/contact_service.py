@@ -79,16 +79,31 @@ class ContactService:
         if not contact:
             return None
         
+        # Smart merge: only update if new value is meaningful
         for k, v in data.items():
-            if v is not None and hasattr(contact, k):
-                # Avoid overwriting with "Unknown" if we already have a name?
-                # Let handler decide.
-                setattr(contact, k, v)
+            if not hasattr(contact, k):
+                continue
+                
+            # Skip None values - don't overwrite existing data with None
+            if v is None:
+                continue
+            
+            # For string fields, skip empty strings - don't overwrite existing data
+            if isinstance(v, str) and not v.strip():
+                continue
+            
+            # Special case: don't overwrite a real name with "Неизвестно"
+            if k == 'name' and v == "Неизвестно":
+                current_name = getattr(contact, k)
+                if current_name and current_name != "Неизвестно":
+                    continue
+            
+            # Update the field
+            setattr(contact, k, v)
         
-        # update attributes if something new is there
+        # Update attributes (merge, don't replace)
         if contact.attributes is None:
             contact.attributes = {}
-        # We merge top level keys?
         current_attrs = dict(contact.attributes) if contact.attributes else {}
         current_attrs.update(data)
         contact.attributes = current_attrs
@@ -101,3 +116,25 @@ class ContactService:
         query = select(Contact).where(Contact.user_id == user_id).order_by(Contact.created_at.desc())
         result = await self.session.execute(query)
         return result.scalars().all()
+
+    async def find_by_identifiers(self, user_id: uuid.UUID, phone: str = None, telegram: str = None) -> Contact:
+        if not phone and not telegram:
+            return None
+        
+        conditions = []
+        if phone:
+            # Simple normalization for comparison could be added here if needed
+            conditions.append(Contact.phone == phone)
+        if telegram:
+            clean_tg = telegram.lower().lstrip("@")
+            conditions.append(Contact.telegram_username == clean_tg)
+            
+        if not conditions:
+            return None
+
+        stmt = select(Contact).where(
+            Contact.user_id == user_id,
+            or_(*conditions)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().first()

@@ -6,4 +6,4 @@ docker-compose restart bot
 Write-Host "`n📋 Showing last 30 lines of logs..." -ForegroundColor Cyan
 docker-compose logs --tail=30 bot
 
-Write-Host "`n✅ Bot restarted. Use 'docker-compose logs -f bot' to follow logs." -ForegroundColor Green
+Write-Host "Bot restarted! Run 'docker-compose logs -f bot' to follow logs." -ForegroundColor Green
