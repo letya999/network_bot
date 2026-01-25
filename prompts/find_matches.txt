@@ -1,0 +1,25 @@
+Act as a professional networking synergizer.
+
+Your task is to analyze two profiles (A and B) and find potential synergies, partnerships, or mutual benefits.
+
+Profile A (User Profile or Contact 1):
+{profile_a}
+
+Profile B (Contact 2):
+{profile_b}
+
+Look for:
+1. "Looking for" in A vs "Can help with" in B
+2. "Can help with" in A vs "Looking for" in B
+3. Shared interests, industries, or roles.
+4. Complementary services or expertise.
+
+Output a JSON object with:
+{
+  "is_match": boolean,
+  "match_score": integer (0-100),
+  "synergy_summary": "A short (1-2 sentences) summary of why they match in Russian.",
+  "suggested_pitch": "A short, personalized pitch or intro that highlights the synergy in Russian."
+}
+
+Ensure the output is valid JSON.

@@ -31,6 +31,34 @@ def mock_session():
     return session
 
 @pytest.fixture
+def mock_async_session_local(mock_session, monkeypatch):
+    """Mock AsyncSessionLocal to return a mock session context manager."""
+    mock_factory = MagicMock()
+    # Mock the context manager __aenter__ / __aexit__
+    mock_factory.return_value.__aenter__.return_value = mock_session
+    
+    # Patch in all files that use AsyncSessionLocal
+    targets = [
+        "app.bot.handlers.AsyncSessionLocal",
+        "app.bot.profile_handlers.AsyncSessionLocal",
+        "app.bot.reminder_handlers.AsyncSessionLocal",
+        "app.bot.analytics_handlers.AsyncSessionLocal",
+        "app.bot.match_handlers.AsyncSessionLocal",
+    ]
+    for target in targets:
+        try:
+            monkeypatch.setattr(target, mock_factory)
+        except (AttributeError, ImportError):
+            pass
+            
+    return mock_factory
+
+@pytest.fixture(autouse=True)
+def auto_mock_db(mock_async_session_local):
+    """Automatically use mock_async_session_local for all tests."""
+    return mock_async_session_local
+
+@pytest.fixture
 def mock_update():
     update = MagicMock(spec=Update)
     
@@ -47,6 +75,12 @@ def mock_update():
     message.chat.id = 12345
     message.text = "Hello"
     message.reply_text = AsyncMock()
+    # Return a mock that represents the sent message, which can be edited or deleted
+    sent_msg = AsyncMock()
+    sent_msg.delete = AsyncMock()
+    sent_msg.edit_text = AsyncMock()
+    message.reply_text.return_value = sent_msg
+    
     message.reply_document = AsyncMock()
     update.message = message
     
@@ -68,6 +102,12 @@ def mock_context():
     context.user_data = {}
     context.bot = MagicMock()
     context.bot.send_message = AsyncMock()
+    context.bot.get_file = AsyncMock()
+    # Mock the return value of get_file (the File object)
+    mock_file_obj = AsyncMock()
+    mock_file_obj.download_to_drive = AsyncMock()
+    context.bot.get_file.return_value = mock_file_obj
+    
     context.args = []
     return context
 

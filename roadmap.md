@@ -39,16 +39,16 @@ Based on [OpenSpec Specification](context.md).
 - [x] Task 3.4: Manual reminder creation UI (via text extraction)
 - [x] Task 3.5: Reminder notification sender
 - [x] Task 3.6: Snooze/complete handlers
-- [ ] Task 3.7: Follow-up message generation
+- [x] Task 3.7: Follow-up message generation
 - [x] Task 3.8: /reminders handler
 
 ## Phase 4: Matching & Insights
-- [ ] Task 4.1: MatchService — поиск синергий
-- [ ] Task 4.2: Match notification при добавлении контакта
-- [ ] Task 4.3: Semantic search через Gemini
-- [ ] Task 4.4: AnalyticsService — агрегация статистики
-- [ ] Task 4.5: /stats handler + визуализация
-- [ ] Task 4.6: /matches handler
+- [x] Task 4.1: MatchService — поиск синергий
+- [x] Task 4.2: Match notification при добавлении контакта
+- [x] Task 4.3: Semantic search через Gemini
+- [x] Task 4.4: AnalyticsService — агрегация статистики
+- [x] Task 4.5: /stats handler + визуализация
+- [x] Task 4.6: /matches handler
 
 ## Phase 5: Graph & Intros
 - [ ] Task 5.1: Connection model + GraphService

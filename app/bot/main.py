@@ -13,6 +13,8 @@ from app.bot.profile_handlers import (
     SELECT_FIELD, INPUT_VALUE, send_card, share_card
 )
 from app.bot.reminder_handlers import list_reminders, reminder_action_callback
+from app.bot.analytics_handlers import show_stats
+from app.bot.match_handlers import find_matches_command, semantic_search_handler, semantic_search_callback
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +34,8 @@ async def post_init(application):
         BotCommand("prompt", "Показать текущий промпт"),
         BotCommand("edit_prompt", "Изменить промпт"),
         BotCommand("reminders", "Мои напоминания"),
+        BotCommand("stats", "Статистика нетворкинга"),
+        BotCommand("matches", "Найти синергии"),
     ]
     await bot.set_my_commands(commands)
     logger.info(f"Bot commands set: {commands}")
@@ -84,7 +88,9 @@ def create_bot():
     
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("list", list_contacts))
-    app.add_handler(CommandHandler("find", find_contact))
+    app.add_handler(CommandHandler("find", semantic_search_handler))
+    app.add_handler(CommandHandler("stats", show_stats))
+    app.add_handler(CommandHandler("matches", find_matches_command))
     app.add_handler(CommandHandler("export", export_contacts))
     app.add_handler(CommandHandler("prompt", show_prompt))
     app.add_handler(CommandHandler("reset_prompt", reset_prompt))
@@ -117,6 +123,7 @@ def create_bot():
     
     # Callback for finding contacts card generation
     app.add_handler(CallbackQueryHandler(generate_card_callback, pattern="^gen_card_"))
+    app.add_handler(CallbackQueryHandler(semantic_search_callback, pattern="^semantic_"))
     
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))

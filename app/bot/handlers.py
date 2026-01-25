@@ -21,6 +21,7 @@ from app.services.card_service import CardService
 from app.services.reminder_service import ReminderService
 import dateparser
 from datetime import datetime, timedelta
+from app.bot.match_handlers import notify_match_if_any
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +203,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 contact = await contact_service.update_contact(last_contact_id, data)
                 await status_msg.edit_text("🔗 Объединено с недавним контактом!")
                 context.user_data.pop("last_contact_id", None)
+                # Check for matches after update
+                await notify_match_if_any(update, contact, db_user, session)
             
             elif is_reminder_only:
                 # Standalone Reminder Logic
@@ -238,6 +241,8 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 context.user_data["last_voice_time"] = now
                 await status_msg.delete()
                 status_msg_deleted = True  # Mark as deleted
+                # Task 4.2: Match notification
+                await notify_match_if_any(update, contact, db_user, session)
 
             if contact:
                 card = format_card(contact)
@@ -316,10 +321,12 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             contact = await contact_service.update_contact(active_id, data)
             await update.message.reply_text("🔗 Объединено с голосовой заметкой!")
             # context.user_data.pop("last_voice_id", None) # Keep open for chaining?
+            await notify_match_if_any(update, contact, db_user, session)
         else:
             contact = await contact_service.create_contact(db_user.id, data)
             context.user_data["last_contact_id"] = contact.id
             context.user_data["last_contact_time"] = now
+            await notify_match_if_any(update, contact, db_user, session)
         
         card = format_card(contact)
         await update.message.reply_text(card)
@@ -601,6 +608,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             contact = await contact_service.update_contact(active_id, data)
             await update.message.reply_text("🔗 Информация добавлена к контакту!")
             # We keep context open for more chaining
+            await notify_match_if_any(update, contact, db_user, session)
         else:
             # Check for standalone reminder
             is_reminder_only = False
@@ -654,6 +662,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             context.user_data["last_contact_time"] = now
             
             await update.message.reply_text("💾 Контакт сохранен (жду голосовое описание или фото...)")
+            await notify_match_if_any(update, contact, db_user, session)
 
         card = format_card(contact)
         await update.message.reply_text(card)
