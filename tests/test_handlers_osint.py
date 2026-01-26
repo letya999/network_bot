@@ -54,6 +54,15 @@ def mock_osint_service():
     return service
 
 
+@pytest.fixture(autouse=True)
+def mock_rate_limit():
+    """Mock rate limiter to always allow."""
+    with patch("app.bot.osint_handlers.rate_limit_middleware", new_callable=AsyncMock) as mock:
+        mock.return_value = True
+        yield mock
+
+
+
 class TestEnrichCommand:
     """Tests for /enrich command."""
 
@@ -67,7 +76,7 @@ class TestEnrichCommand:
 
         mock_update.message.reply_text.assert_called()
         call_args = mock_update.message.reply_text.call_args
-        assert "Укажи имя" in call_args[0][0] or "укажи" in str(call_args).lower()
+        assert "Кого обогатить" in call_args[0][0] or "кого" in str(call_args).lower()
 
     @pytest.mark.asyncio
     async def test_enrich_contact_not_found(self, mock_update, mock_context, mock_session, mock_async_session_local, mock_db_user):

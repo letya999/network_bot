@@ -253,6 +253,54 @@ For confidence: "high" if multiple sources confirm the data, "medium" if found i
             "data": structured_data
         }
     
+    async def enrich_contact(self, contact_id: uuid.UUID, force: bool = False) -> Dict[str, Any]:
+        """
+        Orchestrate the enrichment process (Auto-mode).
+        1. Search for profiles.
+        2. Pick the best candidate.
+        3. Enrich.
+        """
+        # Check cache
+        if not force:
+            result = await self.session.execute(
+                select(Contact).where(Contact.id == contact_id)
+            )
+            contact = result.scalar_one_or_none()
+            if not contact:
+                 return {"status": "error", "message": "Contact not found"}
+            
+            if contact.name == "Неизвестно":
+                return {"status": "error", "message": "Contact name is required"}
+                 
+            if contact.osint_data and not contact.osint_data.get("no_results"):
+                # check if enriched recently (e.g. within 30 days)
+                enriched_at_str = contact.osint_data.get("enriched_at")
+                if enriched_at_str:
+                    enriched_at = datetime.fromisoformat(enriched_at_str)
+                    if datetime.now() - enriched_at < timedelta(days=settings.OSINT_CACHE_DAYS):
+                        return {"status": "cached", "data": contact.osint_data}
+
+        # 1. Search profiles
+        candidates = await self.search_potential_profiles(contact_id)
+        
+        if not candidates:
+            # Mark as no results
+            result = await self.session.execute(
+                select(Contact).where(Contact.id == contact_id)
+            )
+            contact = result.scalar_one_or_none()
+            if contact:
+                contact.osint_data = {"no_results": True, "enriched_at": datetime.now().isoformat()}
+                await self.session.commit()
+            return {"status": "no_results", "message": "No profiles found"}
+
+        # 2. Pick best candidate (Auto-mode: Pick first)
+        # TODO: Implement better selection logic (e.g. match title/company)
+        best_candidate = candidates[0]
+        
+        # 3. Enrich
+        return await self.enrich_contact_final(contact_id, best_candidate["url"])
+
     # Keep existing helper methods
     async def get_enrichment_stats(self, user_id: uuid.UUID) -> Dict[str, int]:
         """Get enrichment statistics for a user."""

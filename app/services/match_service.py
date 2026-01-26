@@ -37,22 +37,58 @@ class MatchService:
         if contact.osint_data:
             osint = contact.osint_data
             
-            # Add extended career info
+            # --- Career ---
             career = osint.get("career", {})
             current = career.get("current", {})
             if current and current.get("description"):
                 lines.append(f"Role Description: {current['description']}")
             
-            # Keywords/Skills from keywords field if we calculate them, or just raw interests
+            previous = career.get("previous", [])
+            if previous:
+                prev_list = []
+                for p in previous:
+                    p_str = f"{p.get('role', 'Empl')} @ {p.get('company', 'Unknown')}"
+                    if p.get("years"):
+                        p_str += f" ({p['years']})"
+                    prev_list.append(p_str)
+                lines.append(f"Previous roles: {'; '.join(prev_list)}")
+
+            # --- Education ---
+            education = osint.get("education", {})
+            universities = education.get("universities", [])
+            if universities:
+                uni_list = []
+                for u in universities:
+                    u_str = u.get("name", "")
+                    if u.get("degree"):
+                        u_str += f" ({u['degree']})"
+                    uni_list.append(u_str)
+                lines.append(f"Education: {'; '.join(uni_list)}")
+            
+            courses = education.get("courses", [])
+            if courses:
+                course_list = [c.get("name", "") for c in courses if c.get("name")]
+                lines.append(f"Courses: {'; '.join(course_list)}")
+
+            # --- Geography ---
+            geography = osint.get("geography", {})
+            if geography.get("birthplace"):
+                lines.append(f"Birthplace: {geography['birthplace']}")
+            if geography.get("current_city"):
+                lines.append(f"Current City: {geography['current_city']}")
+            if geography.get("lived_in"):
+                lines.append(f"Lived in: {', '.join(geography['lived_in'])}")
+
+            # --- Personal ---
             personal = osint.get("personal", {})
             if personal.get("interests"):
                 lines.append(f"Interests: {', '.join(personal['interests'])}")
             
-            # Add recent publications titles as context for expertise
+            # --- Publications ---
             pubs = osint.get("publications", [])
             if pubs:
-                titles = [p['title'] for p in pubs[:3] if p.get('title')]
-                lines.append(f"Content content/Publications: {'; '.join(titles)}")
+                titles = [p['title'] for p in pubs[:5] if p.get('title')]
+                lines.append(f"Publications: {'; '.join(titles)}")
 
         return "\n".join(lines)
 
