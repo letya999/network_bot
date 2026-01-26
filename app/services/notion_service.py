@@ -73,7 +73,7 @@ class NotionService:
             async with session.post(url, headers=self.headers, json=payload) as resp:
                 if resp.status != 200:
                     text = await resp.text()
-                    logger.error(f"Error querying Notion DB: {text}")
+                    logger.error(f"Error querying Notion DB ({resp.status}): {text}")
                     break
                 
                 data = await resp.json()

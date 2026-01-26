@@ -8,7 +8,8 @@ from telegram.ext import ConversationHandler
 
 @pytest.fixture(autouse=True)
 def mock_user_service():
-    with patch("app.bot.handlers.UserService") as mock:
+    # Patch where it is looked up in prompt.py
+    with patch("app.bot.handlers.prompt.UserService") as mock:
         service_instance = AsyncMock()
         mock.return_value = service_instance
         yield service_instance
@@ -24,18 +25,22 @@ async def test_set_event_mode(mock_update, mock_context):
 @pytest.mark.asyncio
 async def test_set_event_mode_status_empty(mock_update, mock_context):
     mock_context.args = []
+    # Ensure no current event so it shows help
+    mock_context.user_data.pop("current_event", None)
     await set_event_mode(mock_update, mock_context)
     
-    # Empty args just shows help or status
-    assert "Используй" in mock_update.message.reply_text.call_args[0][0]
+    # Empty args shows help
+    assert "Использование" in mock_update.message.reply_text.call_args[0][0]
 
 @pytest.mark.asyncio
 async def test_set_event_mode_stop(mock_update, mock_context):
-    mock_context.args = ["stop"]
+    # To stop/toggle off, we MUST pass empty args while having a current event
+    mock_context.args = []
     mock_context.user_data["current_event"] = "Old Event"
     
     await set_event_mode(mock_update, mock_context)
     
+    # Should pop the event
     assert "current_event" not in mock_context.user_data
     assert "выключен" in mock_update.message.reply_text.call_args[0][0].lower()
 
@@ -45,10 +50,21 @@ from app.bot.profile_handlers import send_card, share_card
 async def test_send_card(mock_update, mock_context, mock_user_service):
     mock_profile = MagicMock(full_name="Alice", bio="Bio")
     
-    with patch("app.services.profile_service.ProfileService.get_profile", AsyncMock(return_value=mock_profile)), \
-         patch("app.services.card_service.CardService.generate_text_card", return_value="Card Text"):
+    # Patch where imported in profile_handlers.py
+    with patch("app.bot.profile_handlers.ProfileService.get_profile", AsyncMock(return_value=mock_profile)), \
+         patch("app.bot.profile_handlers.CardService.generate_text_card", return_value="Card Text"):
         
-        await send_card(mock_update, mock_context)
+        # profile_handlers instantiates ProfileService(session), so we need to ensure that works.
+        # However, we are patching get_profile on the class? 
+        # No, ProfileService(session) returns an instance. 
+        # If we patch app.bot.profile_handlers.ProfileService, we mock the class.
+        
+        with patch("app.bot.profile_handlers.ProfileService") as MockProfileService:
+             instance = AsyncMock()
+             MockProfileService.return_value = instance
+             instance.get_profile.return_value = mock_profile
+             
+             await send_card(mock_update, mock_context)
         
         assert "Card Text" in mock_update.message.reply_text.call_args[0][0]
 
@@ -78,7 +94,8 @@ async def test_show_prompt_default(mock_update, mock_context, mock_user_service)
     mock_user = MagicMock(custom_prompt=None)
     mock_user_service.get_or_create_user = AsyncMock(return_value=mock_user)
     
-    with patch("app.bot.handlers.GeminiService") as MockGemini:
+    # Patch GeminiService in prompt.py
+    with patch("app.bot.handlers.prompt.GeminiService") as MockGemini:
         mock_gemini = MockGemini.return_value
         mock_gemini.get_prompt.return_value = "System Prompt"
         

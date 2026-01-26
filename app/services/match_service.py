@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 import uuid
 import json
 import logging
+from app.config.constants import MAX_SEMANTIC_SEARCH_CONTACTS
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +44,13 @@ class MatchService:
             if current and current.get("description"):
                 lines.append(f"Role Description: {current['description']}")
             
-            previous = career.get("previous", [])
-            if previous:
+            previous_positions = career.get("previous", [])
+            if previous_positions:
                 prev_list = []
-                for p in previous:
-                    p_str = f"{p.get('role', 'Empl')} @ {p.get('company', 'Unknown')}"
-                    if p.get("years"):
-                        p_str += f" ({p['years']})"
+                for position in previous_positions:
+                    p_str = f"{position.get('role', 'Empl')} @ {position.get('company', 'Unknown')}"
+                    if position.get("years"):
+                        p_str += f" ({position['years']})"
                     prev_list.append(p_str)
                 lines.append(f"Previous roles: {'; '.join(prev_list)}")
 
@@ -58,16 +59,16 @@ class MatchService:
             universities = education.get("universities", [])
             if universities:
                 uni_list = []
-                for u in universities:
-                    u_str = u.get("name", "")
-                    if u.get("degree"):
-                        u_str += f" ({u['degree']})"
+                for university in universities:
+                    u_str = university.get("name", "")
+                    if university.get("degree"):
+                        u_str += f" ({university['degree']})"
                     uni_list.append(u_str)
                 lines.append(f"Education: {'; '.join(uni_list)}")
             
             courses = education.get("courses", [])
             if courses:
-                course_list = [c.get("name", "") for c in courses if c.get("name")]
+                course_list = [course.get("name", "") for course in courses if course.get("name")]
                 lines.append(f"Courses: {'; '.join(course_list)}")
 
             # --- Geography ---
@@ -85,9 +86,9 @@ class MatchService:
                 lines.append(f"Interests: {', '.join(personal['interests'])}")
             
             # --- Publications ---
-            pubs = osint.get("publications", [])
-            if pubs:
-                titles = [p['title'] for p in pubs[:5] if p.get('title')]
+            publications = osint.get("publications", [])
+            if publications:
+                titles = [pub['title'] for pub in publications[:5] if pub.get('title')]
                 lines.append(f"Publications: {'; '.join(titles)}")
 
         return "\n".join(lines)
@@ -110,7 +111,7 @@ class MatchService:
             match_data = await self.gemini.extract_contact_data(prompt_template=prompt)
             return match_data
         except Exception as e:
-            logger.error(f"Error finding matches: {e}")
+            logger.exception("Error finding matches")
             return {"is_match": False, "match_score": 0, "error": str(e)}
 
     async def find_peer_matches(self, contact: Contact, limit: int = 50) -> List[Dict[str, Any]]:
@@ -152,16 +153,19 @@ class MatchService:
         """
         Perform semantic search using Gemini.
         """
-        # Get all contacts for the user to provide as context
-        # In a real system with many contacts, we'd use vector embeddings.
-        # Here, we'll try to provide a list of contacts to Gemini if there aren't too many.
-        stmt = select(Contact).where(Contact.user_id == user_id)
+        # Provide recent contacts as context. Vector search (pgvector) is recommended for larger sets.
+        stmt = (
+            select(Contact)
+            .where(Contact.user_id == user_id)
+            .order_by(Contact.updated_at.desc().nulls_last(), Contact.created_at.desc())
+            .limit(MAX_SEMANTIC_SEARCH_CONTACTS)
+        )
         result = await self.session.execute(stmt)
         contacts = result.scalars().all()
         
         contact_list_str = ""
-        for c in contacts:
-            contact_list_str += self._format_contact_context(c) + "\n---\n"
+        for contact in contacts:
+            contact_list_str += self._format_contact_context(contact) + "\n---\n"
 
         prompt = f"""
         Act as a professional networking assistant. 
@@ -193,6 +197,6 @@ class MatchService:
         try:
             search_results = await self.gemini.extract_contact_data(prompt_template=prompt)
             return search_results.get("matches", [])
-        except Exception as e:
-            logger.error(f"Semantic search error: {e}")
+        except Exception:
+            logger.exception("Semantic search error")
             return []

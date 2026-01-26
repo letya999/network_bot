@@ -17,5 +17,5 @@ async def send_telegram_message(telegram_id: int, text: str):
     try:
         await bot.send_message(chat_id=telegram_id, text=text)
         logger.info(f"Sent notification to {telegram_id}: {text[:20]}...")
-    except Exception as e:
-        logger.error(f"Failed to send notification to {telegram_id}: {e}")
+    except Exception:
+        logger.exception(f"Failed to send notification to {telegram_id}")

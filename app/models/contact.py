@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, Text, ForeignKey, TIMESTAMP, Date, func, UniqueConstraint
+from sqlalchemy import Column, String, Text, ForeignKey, TIMESTAMP, Date, func, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -41,6 +41,9 @@ class Contact(Base):
     introduced_by = relationship("Contact", remote_side=[id])
 
     __table_args__ = (
-        # Indexes are defined in spec but usually we define them via Column(index=True) or Index construct
-        # contacts: (user_id), (user_id, status)
+        # Composite indexes for common query patterns
+        Index('ix_contact_user_status', 'user_id', 'status'),
+        Index('ix_contact_user_created', 'user_id', 'created_at'),
+        Index('ix_contact_user_name', 'user_id', 'name'),
+        Index('ix_contact_user_event_date', 'user_id', 'event_date'),
     )

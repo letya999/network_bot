@@ -6,7 +6,7 @@ from app.core.scheduler import start_scheduler, shutdown_scheduler
 from app.bot.handlers import (
     start, handle_voice, handle_contact, list_contacts, find_contact, export_contacts, handle_text_message,
     show_prompt, start_edit_prompt, save_prompt, cancel_prompt_edit, reset_prompt, WAITING_FOR_PROMPT,
-    generate_card_callback, set_event_mode
+    generate_card_callback, card_pitch_selection_callback, set_event_mode
 )
 from app.bot.profile_handlers import (
     show_profile, handle_edit_callback, save_profile_value, cancel_edit, 
@@ -21,6 +21,7 @@ from app.bot.osint_handlers import (
     enrichment_stats, batch_enrich_callback
 )
 from app.bot.integration_handlers import sync_command, export_contact_callback
+from app.bot.rate_limiter import rate_limiter
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,10 @@ async def post_init(application):
     
     # Start Scheduler
     await start_scheduler()
+    
+    # Start rate limiter cleanup task
+    rate_limiter.start_cleanup_task()
+    logger.info("Rate limiter cleanup task started")
 
 async def post_shutdown(application):
     """
@@ -152,6 +157,7 @@ def create_bot():
     
     # Callback for finding contacts card generation
     app.add_handler(CallbackQueryHandler(generate_card_callback, pattern="^gen_card_"))
+    app.add_handler(CallbackQueryHandler(card_pitch_selection_callback, pattern="^card_pitch_"))
     app.add_handler(CallbackQueryHandler(semantic_search_callback, pattern="^semantic_"))
     app.add_handler(CallbackQueryHandler(export_contact_callback, pattern="^export_"))
     

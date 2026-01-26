@@ -73,5 +73,5 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  plt.close()
                  
                  await update.message.reply_photo(photo=buf)
-             except Exception as e:
-                 logger.error(f"Error generating chart: {e}")
+             except Exception:
+                 logger.exception("Error generating chart")

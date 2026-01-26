@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from app.bot.profile_handlers import show_profile, handle_edit_callback, save_profile_value
-from app.bot.handlers import generate_card_callback
+from app.bot.handlers.card import generate_card_callback
 from app.models.user import User
 from app.models.contact import Contact
 import uuid

@@ -1,6 +1,6 @@
 from enum import Enum as PyEnum
 import uuid
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text, func, Enum, Boolean
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, func, Enum, Boolean, Index
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -30,3 +30,8 @@ class Reminder(Base):
 
     user = relationship("User", backref="reminders")
     contact = relationship("Contact", backref="reminders")
+
+    __table_args__ = (
+        # Composite index for querying pending reminders by user and due date
+        Index('ix_reminder_user_status_due', 'user_id', 'status', 'due_at'),
+    )

@@ -21,6 +21,14 @@ from sqlalchemy import select, func
 from app.core.config import settings
 from app.models.contact import Contact
 from app.services.gemini_service import GeminiService
+from app.config.constants import (
+    UNKNOWN_CONTACT_NAME,
+    OSINT_ENRICHMENT_DELAY_DAYS,
+    TAVILY_MAX_RESULTS,
+    TAVILY_SEARCH_DEPTH,
+    TAVILY_TIMEOUT_SECONDS,
+    BATCH_ENRICHMENT_DELAY_SECONDS
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,10 +53,10 @@ class OSINTService:
         payload = {
             "api_key": settings.TAVILY_API_KEY,
             "query": query,
-            "search_depth": "advanced", # "basic" or "advanced"
+            "search_depth": TAVILY_SEARCH_DEPTH,  # "basic" or "advanced"
             "include_answer": False,
             "include_raw_content": False,
-            "max_results": 5,
+            "max_results": TAVILY_MAX_RESULTS,
         }
         
         if include_domains:
@@ -56,7 +64,7 @@ class OSINTService:
 
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=20)) as response:
+                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=TAVILY_TIMEOUT_SECONDS)) as response:
                     if response.status != 200:
                         logger.error(f"Tavily error {response.status}: {await response.text()}")
                         return []
@@ -64,8 +72,8 @@ class OSINTService:
                     data = await response.json()
                     return data.get("results", [])
 
-        except Exception as e:
-            logger.exception(f"Tavily search error: {e}")
+        except Exception:
+            logger.exception("Tavily search error")
             return []
 
     async def _structure_osint_data(self, raw_data: Dict[str, Any], contact_info: Dict[str, str]) -> Dict[str, Any]:
@@ -113,7 +121,7 @@ class OSINTService:
             return structured
 
         except Exception as e:
-            logger.exception(f"Error structuring OSINT data: {e}")
+            logger.exception("Error structuring OSINT data")
             return {
                 "raw_results": raw_data,
                 "enriched_at": datetime.now().isoformat(),
@@ -179,16 +187,16 @@ For confidence: "high" if multiple sources confirm the data, "medium" if found i
         candidates = []
         seen_urls = set()
         
-        for res in results:
-            url = res.get("url", "")
+        for search_result in results:
+            url = search_result.get("url", "")
             if "linkedin.com/in/" in url and url not in seen_urls:
                 seen_urls.add(url)
                 # Clean up title for display
-                title = res.get("title", "").replace(" | LinkedIn", "").replace(" - LinkedIn", "")
+                title = search_result.get("title", "").replace(" | LinkedIn", "").replace(" - LinkedIn", "")
                 candidates.append({
                     "name": title,  # Usually "Name - Role"
                     "url": url,
-                    "snippet": res.get("content", "")[:100]
+                    "snippet": search_result.get("content", "")[:100]
                 })
         
         return candidates
@@ -210,15 +218,30 @@ For confidence: "high" if multiple sources confirm the data, "medium" if found i
 
         logger.info(f"Deep enriching {contact.name} with URL {linkedin_url}")
 
+        # Parallelize API calls for better performance
         # 1. Get specifically the profile content (Tavily reads the page)
-        # We search specifically for the URL to get its fresh content
-        profile_results = await self._tavily_search(linkedin_url)
-        
         # 2. Get broader context (articles, etc)
         content_query = f"{contact.name} {contact.company or ''} interview podcast talk article"
-        content_results = await self._tavily_search(content_query)
+        
+        # Execute both searches in parallel
+        profile_results, content_results = await asyncio.gather(
+            self._tavily_search(linkedin_url),
+            self._tavily_search(content_query),
+            return_exceptions=True  # Continue if one fails
+        )
+        
+        # Handle potential exceptions
+        all_results = []
+        if not isinstance(profile_results, Exception):
+            all_results.extend(profile_results)
+        else:
+            logger.error(f"Profile search failed: {profile_results}")
+            
+        if not isinstance(content_results, Exception):
+            all_results.extend(content_results)
+        else:
+            logger.error(f"Content search failed: {content_results}")
 
-        all_results = profile_results + content_results
         
         # Structure with Gemini
         contact_info = {
@@ -232,10 +255,10 @@ For confidence: "high" if multiple sources confirm the data, "medium" if found i
             "linkedin_profile": linkedin_url,
             "search_results": [
                 {
-                    "title": r.get("title"),
-                    "url": r.get("url"),
-                    "content": r.get("content", "")[:1500] # Increase context slightly for the main profile
-                } for r in all_results
+                    "title": result.get("title"),
+                    "url": result.get("url"),
+                    "content": result.get("content", "")[:1500] # Increase context slightly for the main profile
+                } for result in all_results
             ]
         }
 
@@ -269,7 +292,7 @@ For confidence: "high" if multiple sources confirm the data, "medium" if found i
             if not contact:
                  return {"status": "error", "message": "Contact not found"}
             
-            if contact.name == "Неизвестно":
+            if contact.name == UNKNOWN_CONTACT_NAME:
                 return {"status": "error", "message": "Contact name is required"}
                  
             if contact.osint_data and not contact.osint_data.get("no_results"):
@@ -277,7 +300,7 @@ For confidence: "high" if multiple sources confirm the data, "medium" if found i
                 enriched_at_str = contact.osint_data.get("enriched_at")
                 if enriched_at_str:
                     enriched_at = datetime.fromisoformat(enriched_at_str)
-                    if datetime.now() - enriched_at < timedelta(days=settings.OSINT_CACHE_DAYS):
+                    if datetime.now() - enriched_at < timedelta(days=OSINT_ENRICHMENT_DELAY_DAYS):
                         return {"status": "cached", "data": contact.osint_data}
 
         # 1. Search profiles
@@ -326,7 +349,7 @@ For confidence: "high" if multiple sources confirm the data, "medium" if found i
         """Batch enrich contacts."""
         query = select(Contact).where(
             Contact.user_id == user_id,
-            Contact.name != "Неизвестно",
+            Contact.name != UNKNOWN_CONTACT_NAME,
             (Contact.osint_data.is_(None) | (Contact.osint_data == {}))
         ).limit(limit)
 
@@ -343,7 +366,7 @@ For confidence: "high" if multiple sources confirm the data, "medium" if found i
                 res = await self.enrich_contact(contact.id)
                 if res["status"] == "success":
                     enriched += 1
-                await asyncio.sleep(1) # Polite delay
+                await asyncio.sleep(BATCH_ENRICHMENT_DELAY_SECONDS)  # Polite delay
             except Exception as e:
                 errors.append(str(e))
         

@@ -5,6 +5,10 @@ from app.models.interaction import Interaction, InteractionType
 from typing import Dict, Any, List
 from app.services.reminder_service import ReminderService
 from app.core.config import settings
+from app.config.constants import (
+    UNKNOWN_CONTACT_NAME,
+    MAX_SEARCH_QUERY_LENGTH
+)
 from datetime import datetime, timedelta
 import dateparser
 import uuid
@@ -19,7 +23,7 @@ class ContactService:
     async def create_contact(self, user_id: uuid.UUID, data: Dict[str, Any]) -> Contact:
         contact = Contact(
             user_id=user_id,
-            name=data.get("name", "Неизвестно"),
+            name=data.get("name", UNKNOWN_CONTACT_NAME),
             company=data.get("company"),
             role=data.get("role"),
             phone=data.get("phone"),
@@ -57,10 +61,10 @@ class ContactService:
         # Process Reminders if extracted
         if data.get("reminders"):
             reminder_service = ReminderService(self.session)
-            for rem_data in data["reminders"]:
+            for reminder_data in data["reminders"]:
                 try:
-                    due_date_str = rem_data.get("due_date")
-                    title = rem_data.get("title")
+                    due_date_str = reminder_data.get("due_date")
+                    title = reminder_data.get("title")
                     if due_date_str and title:
                         # Try parsing date using dateparser
                         due_date = dateparser.parse(due_date_str, settings={'PREFER_DATES_FROM': 'future'})
@@ -74,13 +78,13 @@ class ContactService:
                             contact_id=contact.id,
                             title=title,
                             due_at=due_date,
-                            description=rem_data.get("description")
+                            description=reminder_data.get("description")
                         )
-                except Exception as e:
-                    logger.error(f"Failed to create extracted reminder: {e}")
+                except Exception:
+                    logger.exception("Failed to create extracted reminder")
 
         # Schedule auto-enrichment if enabled and contact has a name
-        if settings.AUTO_ENRICH_ON_CREATE and contact.name and contact.name != "Неизвестно":
+        if settings.AUTO_ENRICH_ON_CREATE and contact.name and contact.name != UNKNOWN_CONTACT_NAME:
             try:
                 from app.core.scheduler import scheduler, auto_enrich_contact_job
                 # Schedule enrichment 5 seconds after creation
@@ -94,8 +98,8 @@ class ContactService:
                     replace_existing=True
                 )
                 logger.info(f"Scheduled auto-enrichment for contact {contact.id}")
-            except Exception as e:
-                logger.error(f"Failed to schedule auto-enrichment: {e}")
+            except Exception:
+                logger.exception("Failed to schedule auto-enrichment")
 
         return contact
 
@@ -106,7 +110,7 @@ class ContactService:
 
     async def find_contacts(self, user_id: uuid.UUID, query_str: str) -> List[Contact]:
         # Input validation: limit query length and sanitize
-        if not query_str or len(query_str) > 100:
+        if not query_str or len(query_str) > MAX_SEARCH_QUERY_LENGTH:
             return []
 
         # Sanitize query to prevent SQL injection (escape special chars)
@@ -131,26 +135,26 @@ class ContactService:
             return None
         
         # Smart merge: only update if new value is meaningful
-        for k, v in data.items():
-            if not hasattr(contact, k):
+        for field, value in data.items():
+            if not hasattr(contact, field):
                 continue
                 
             # Skip None values - don't overwrite existing data with None
-            if v is None:
+            if value is None:
                 continue
             
             # For string fields, skip empty strings - don't overwrite existing data
-            if isinstance(v, str) and not v.strip():
+            if isinstance(value, str) and not value.strip():
                 continue
             
             # Special case: don't overwrite a real name with "Неизвестно"
-            if k == 'name' and v == "Неизвестно":
-                current_name = getattr(contact, k)
-                if current_name and current_name != "Неизвестно":
+            if field == 'name' and value == UNKNOWN_CONTACT_NAME:
+                current_name = getattr(contact, field)
+                if current_name and current_name != UNKNOWN_CONTACT_NAME:
                     continue
             
             # Update the field
-            setattr(contact, k, v)
+            setattr(contact, field, value)
         
         # Update attributes (merge, don't replace)
         if contact.attributes is None:

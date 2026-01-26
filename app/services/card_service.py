@@ -2,7 +2,7 @@ from app.schemas.profile import UserProfile
 
 class CardService:
     @staticmethod
-    def generate_text_card(profile: UserProfile, intro_text: str = None) -> str:
+    def generate_text_card(profile: UserProfile, intro_text: str = None, pitch: str = None) -> str:
         lines = []
         if intro_text:
              lines.append(f"👋 {intro_text}")
@@ -28,6 +28,11 @@ class CardService:
         
         if profile.bio:
             lines.append(f"_{profile.bio}_")
+            lines.append("")
+        
+        # Add pitch if provided
+        if pitch:
+            lines.append(f"🚀 *Питч*: {pitch}")
             lines.append("")
 
         if profile.interests:
