@@ -339,10 +339,10 @@ AI-powered поиск пересечений и связей между конт
 Экспорт и синхронизация с внешними сервисами.
 
 ### Задачи
-- [ ] Task 7.1: NotionService + `/sync notion`
-- [ ] Task 7.2: SheetsService + `/sync sheets`
+- [x] Task 7.1: NotionService + `/sync notion`
+- [x] Task 7.2: SheetsService + `/sync sheets`
 - [ ] Task 7.3: Кнопки экспорта на карточке контакта
-- [ ] Task 7.4: `/event {name}` — режим мероприятия (auto-tagging)
+- [x] Task 7.4: `/event {name}` — режим мероприятия (auto-tagging)
 - [ ] Task 7.5: Google Calendar integration (optional)
 
 ---

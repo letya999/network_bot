@@ -20,6 +20,7 @@ from app.bot.osint_handlers import (
     start_import, handle_csv_import, cancel_import, WAITING_FOR_CSV,
     enrichment_stats, batch_enrich_callback
 )
+from app.bot.integration_handlers import sync_command
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,7 @@ async def post_init(application):
         BotCommand("stats", "Статистика нетворкинга"),
         BotCommand("matches", "Найти синергии"),
         BotCommand("event", "Режим мероприятия (Context Mode)"),
+        BotCommand("sync", "Синхронизация (Notion/Sheets)"),
     ]
     await bot.set_my_commands(commands)
     logger.info(f"Bot commands set: {commands}")
@@ -103,6 +105,7 @@ def create_bot():
     app.add_handler(CommandHandler("prompt", show_prompt))
     app.add_handler(CommandHandler("reset_prompt", reset_prompt))
     app.add_handler(CommandHandler("event", set_event_mode))
+    app.add_handler(CommandHandler("sync", sync_command))
     
     prompt_conv = ConversationHandler(
         entry_points=[CommandHandler("edit_prompt", start_edit_prompt)],

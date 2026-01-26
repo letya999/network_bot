@@ -39,4 +39,15 @@ class Settings(BaseSettings):
     AUTO_ENRICH_ON_CREATE: bool = True  # Auto-enrich new contacts
     OSINT_CACHE_DAYS: int = 30  # Days before re-enrichment is allowed
 
+    # Notion Integration
+    NOTION_API_KEY: Optional[str] = None
+    NOTION_DATABASE_ID: Optional[str] = None
+
+    # Google Sheets Integration
+    GOOGLE_PROJ_ID: Optional[str] = None
+    GOOGLE_PRIVATE_KEY_ID: Optional[str] = None
+    GOOGLE_PRIVATE_KEY: Optional[str] = None
+    GOOGLE_CLIENT_EMAIL: Optional[str] = None
+    GOOGLE_SHEET_ID: Optional[str] = None
+
 settings = Settings()
