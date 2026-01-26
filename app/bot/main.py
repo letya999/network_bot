@@ -20,7 +20,7 @@ from app.bot.osint_handlers import (
     start_import, handle_csv_import, cancel_import, WAITING_FOR_CSV,
     enrichment_stats, batch_enrich_callback
 )
-from app.bot.integration_handlers import sync_command
+from app.bot.integration_handlers import sync_command, export_contact_callback
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +153,7 @@ def create_bot():
     # Callback for finding contacts card generation
     app.add_handler(CallbackQueryHandler(generate_card_callback, pattern="^gen_card_"))
     app.add_handler(CallbackQueryHandler(semantic_search_callback, pattern="^semantic_"))
+    app.add_handler(CallbackQueryHandler(export_contact_callback, pattern="^export_"))
     
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))

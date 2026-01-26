@@ -106,3 +106,54 @@ async def sync_sheets(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error executing sync sheets: {e}")
         await status_msg.edit_text("❌ Произошла ошибка при синхронизации.")
+
+async def export_contact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    # export_notion_{id} or export_sheets_{id}
+    if data.startswith("export_notion_"):
+        service_type = "notion"
+        contact_id = data[14:]
+    elif data.startswith("export_sheets_"):
+        service_type = "sheets"
+        contact_id = data[14:]
+    else:
+        return
+
+    # User feedback
+    # await query.message.reply_text(f"⏳ Экспорт контакта в {service_type}...")
+
+    try:
+        async with AsyncSessionLocal() as session:
+            # Get Contact
+            contact_service = ContactService(session)
+            # contact_id is UUID string
+            from app.models.contact import Contact
+            contact = await session.get(Contact, contact_id)
+            
+            if not contact:
+                await query.message.reply_text("❌ Контакт не найден.")
+                return
+
+            if service_type == "notion":
+                service = NotionService()
+                # We reuse sync_contacts but just for one
+                result = await service.sync_contacts([contact])
+            else:
+                service = SheetsService()
+                result = await service.sync_contacts([contact])
+
+            if "error" in result:
+                await query.message.reply_text(f"❌ Ошибка экспорта в {service_type}: {result['error']}")
+            elif result['created'] > 0:
+                await query.message.reply_text(f"✅ Контакт {contact.name} добавлен в {service_type}!")
+            elif result['updated'] > 0:
+                await query.message.reply_text(f"✅ Данные контакта {contact.name} обновлены в {service_type}!")
+            else:
+                 await query.message.reply_text(f"⚠️ Изменений в {service_type} не потребовалось.")
+
+    except Exception as e:
+        logger.error(f"Error single export to {service_type}: {e}")
+        await query.message.reply_text(f"❌ Произошла ошибка: {e}")

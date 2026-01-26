@@ -168,6 +168,12 @@ def get_contact_keyboard(contact):
     keyboard.append([
         InlineKeyboardButton("✨ Визитка для него", callback_data=f"gen_card_{contact.id}")
     ])
+    
+    # Export Buttons (Task 7.3)
+    keyboard.append([
+        InlineKeyboardButton("📤 в Notion", callback_data=f"export_notion_{contact.id}"),
+        InlineKeyboardButton("📊 в Sheets", callback_data=f"export_sheets_{contact.id}")
+    ])
 
     return InlineKeyboardMarkup(keyboard) if keyboard else None
 

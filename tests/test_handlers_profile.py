@@ -13,12 +13,30 @@ def assert_msg_contains(mock_reply_text, substring):
     assert found, f"Message containing '{substring}' not found"
 
 @pytest.mark.asyncio
-async def test_show_profile(mock_update, mock_context):
-    mock_db_user = User(telegram_id=12345, name="Test User", profile_data={})
+async def test_show_profile_with_assets(mock_update, mock_context):
+    from app.schemas.profile import UserProfile
+    profile = UserProfile(
+        full_name="Asset Master",
+        pitches=["Pitch 1", "Pitch 2"],
+        one_pagers=["http://one.pager"],
+        welcome_messages=["Hello!"]
+    )
+    mock_db_user = User(telegram_id=12345, name="Asset Master", profile_data=profile.model_dump())
     with patch("app.services.user_service.UserService.get_or_create_user", AsyncMock(return_value=mock_db_user)):
         mock_update.callback_query = None
         await show_profile(mock_update, mock_context)
-        assert "Test User" in mock_update.message.reply_text.call_args[0][0]
+        output = mock_update.message.reply_text.call_args[0][0]
+        assert "*Питчи*: 2" in output
+        assert "*Ванпейджеры*: 1" in output
+        assert "*Приветствия*: 1" in output
+
+@pytest.mark.asyncio
+async def test_edit_assets_callbacks(mock_update, mock_context):
+    asset_callbacks = ["edit_pitches", "edit_one_pagers", "edit_welcome"]
+    for callback in asset_callbacks:
+        mock_update.callback_query.data = callback
+        await handle_edit_callback(mock_update, mock_context)
+        assert mock_context.user_data["edit_field"] in ["pitches", "one_pagers", "welcome_messages"]
 
 @pytest.mark.asyncio
 async def test_edit_profile_callback(mock_update, mock_context):
@@ -27,13 +45,19 @@ async def test_edit_profile_callback(mock_update, mock_context):
     assert "полное имя" in mock_update.callback_query.edit_message_text.call_args[0][0]
 
 @pytest.mark.asyncio
-async def test_save_profile_value(mock_update, mock_context):
-    mock_context.user_data["edit_field"] = "bio"
-    mock_update.message.text = "New Bio"
+async def test_save_pitches_list(mock_update, mock_context):
+    mock_context.user_data["edit_field"] = "pitches"
+    mock_update.message.text = "Pitch 1; Pitch 2"
     with patch("app.services.profile_service.ProfileService.update_profile_field", AsyncMock()) as mock_upd:
         from app.schemas.profile import UserProfile
-        mock_upd.return_value = UserProfile(bio="New Bio")
+        mock_upd.return_value = UserProfile(pitches=["Pitch 1", "Pitch 2"])
         await save_profile_value(mock_update, mock_context)
+        
+        # Verify call arguments
+        # ProfileService.update_profile_field(user_id, field, value)
+        mock_upd.assert_called_once()
+        assert mock_upd.call_args[0][1] == "pitches"
+        assert mock_upd.call_args[0][2] == ["Pitch 1", "Pitch 2"]
         assert_msg_contains(mock_update.message.reply_text, "Сохранено")
 
 @pytest.mark.asyncio

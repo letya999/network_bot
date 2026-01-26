@@ -40,13 +40,23 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     email = profile.email or "—"
     text += f"\n📞 *Контакты*:\n📱 {phone}\n📧 {email}\n"
 
+    # Assets summary
+    if profile.pitches:
+        text += f"🚀 *Питчи*: {len(profile.pitches)}\n"
+    if profile.one_pagers:
+        text += f"📄 *Ванпейджеры*: {len(profile.one_pagers)}\n"
+    if profile.welcome_messages:
+        text += f"👋 *Приветствия*: {len(profile.welcome_messages)}\n"
+
     # Social links could be added here
         
     keyboard = [
         [InlineKeyboardButton("✏️ Имя", callback_data="edit_full_name"), InlineKeyboardButton("📝 Био", callback_data="edit_bio")],
         [InlineKeyboardButton("💼 Работа", callback_data="edit_job"), InlineKeyboardButton("📍 Город", callback_data="edit_location")],
         [InlineKeyboardButton("⭐ Интересы", callback_data="edit_interests"), InlineKeyboardButton("📞 Телефон", callback_data="edit_phone")],
-        [InlineKeyboardButton("📧 Email", callback_data="edit_email"), InlineKeyboardButton("❌ Закрыть", callback_data="close_profile")]
+        [InlineKeyboardButton("📧 Email", callback_data="edit_email"), InlineKeyboardButton("🚀 Питчи", callback_data="edit_pitches")],
+        [InlineKeyboardButton("📄 Ванпейджеры", callback_data="edit_one_pagers"), InlineKeyboardButton("👋 Приветствия", callback_data="edit_welcome")],
+        [InlineKeyboardButton("❌ Закрыть", callback_data="close_profile")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -85,7 +95,10 @@ async def handle_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         "edit_location": "location",
         "edit_interests": "interests",
         "edit_phone": "phone",
-        "edit_email": "email"
+        "edit_email": "email",
+        "edit_pitches": "pitches",
+        "edit_one_pagers": "one_pagers",
+        "edit_welcome": "welcome_messages"
     }
     
     field = field_map.get(data)
@@ -101,7 +114,10 @@ async def handle_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         "location": "Введите ваш Город/Локацию:",
         "interests": "Перечислите ваши интересы через запятую:",
         "phone": "Введите номер телефона:",
-        "email": "Введите email:"
+        "email": "Введите email:",
+        "pitches": "Введите новый текст питча (или список через точку с запятой ';'):",
+        "one_pagers": "Введите ссылки на ванпейджеры (через ';'):",
+        "welcome_messages": "Введите варианты приветствий (через ';'):"
     }
     
     prompt_text = prompts.get(field, "Введите значение:")
@@ -137,11 +153,12 @@ async def save_profile_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 # User might have just typed company or job. 
                 # Let's assume just job title if no comma, or we could ask better.
                 pass
-        elif field == "interests":
-            # Split by comma
-            interests = [i.strip() for i in value.replace(";", ",").split(",")]
-            interests = [i for i in interests if i] # Filter empty
-            await service.update_profile_field(user.id, "interests", interests)
+        elif field in ["interests", "pitches", "one_pagers", "welcome_messages"]:
+            # Split by comma or semicolon
+            separator = ";" if field != "interests" else ","
+            items = [i.strip() for i in value.replace(";", "," if separator == "," else ";").split(separator)]
+            items = [i for i in items if i] # Filter empty
+            await service.update_profile_field(user.id, field, items)
         else:
             await service.update_profile_field(user.id, field, value)
             
