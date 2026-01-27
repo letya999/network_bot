@@ -23,6 +23,13 @@ class SheetsService:
 
     def __init__(self):
         self.sheet_id = settings.GOOGLE_SHEET_ID
+        if self.sheet_id:
+            # Clean sheet ID if user pasted full URL or path
+            # Remove "https://docs.google.com/spreadsheets/d/" if present
+            if "/d/" in self.sheet_id:
+                self.sheet_id = self.sheet_id.split("/d/")[1].split("/")[0]
+            elif self.sheet_id.startswith("d/"): # Handle cases like 'd/ID'
+                 self.sheet_id = self.sheet_id[2:].split("/")[0]
         self.client = None
         
         if HAS_GSPREAD and self._has_credentials():
@@ -93,16 +100,29 @@ class SheetsService:
             # Check/Write headers
             current_values = worksheet.get_all_values()
             
+            # If empty or first row doesn't match headers, force write headers
+            # Using safe check: if sheet is empty OR first cell is empty OR first row doesn't look like our header
+            force_headers = False
             if not current_values:
-                worksheet.append_row(headers)
-                current_values = [headers]
-            elif current_values[0] != headers:
-                # Warning: headers mismatch. We might overwrite or append incorrectly. 
-                # For now assume similar enough or just append to end
-                pass
+                force_headers = True
+            elif not current_values[0] or current_values[0][0] != headers[0]:
+                force_headers = True
+            
+            if force_headers:
+                # We update the first row explicitly
+                print(f"Writing headers to {worksheet.title}")
+                worksheet.update('A1:M1', [headers])
+                # Reload or manually patch current_values
+                if not current_values:
+                    current_values = [headers]
+                else:
+                    current_values[0] = headers
 
             # Map Name -> Row Index (0-based list index)
             name_map = {}
+            # We track the last used row to know where to append
+            last_row_index = len(current_values) - 1 
+
             for index, row in enumerate(current_values):
                 if index == 0: continue # Skip header
                 if row:
@@ -111,6 +131,13 @@ class SheetsService:
             # Collect batch updates for existing contacts
             batch_updates = []
             
+            # For new rows, we can also use batch_update if we calculate the range
+            # But appending one by one might be safer if concurrency is an issue (it's not here)
+            # Efficient way: collect new rows and append them all at once at the end?
+            # Or use batch_update for them too.
+            
+            new_rows_data = []
+
             for contact in contacts:
                 try:
                     row_data = [
@@ -139,15 +166,15 @@ class SheetsService:
                         })
                         stats["updated"] += 1
                     else:
-                        # Append new contact
-                        worksheet.append_row(row_data)
+                        # Append new contact to list
+                        new_rows_data.append(row_data)
                         stats["created"] += 1
                         
                 except Exception:
                     logger.exception(f"Error processing contact {contact.name}")
                     stats["failed"] += 1
             
-            # Execute batch updates if any
+            # Execute batch updates for existing rows
             if batch_updates:
                 try:
                     worksheet.batch_update(batch_updates)
@@ -156,8 +183,22 @@ class SheetsService:
                     logger.exception("Batch update failed")
                     stats["failed"] += len(batch_updates)
                     stats["updated"] -= len(batch_updates)
+
+            # Append new rows in one go
+            if new_rows_data:
+                try:
+                    # Append starting from last_row_index + 2 (1-based, +1 for next)
+                    # Actually gspread append_rows is better for this
+                    worksheet.append_rows(new_rows_data)
+                    logger.info(f"Appended {len(new_rows_data)} new contacts")
+                except Exception:
+                    logger.exception("Append rows failed")
+                    stats["failed"] += len(new_rows_data)
+                    stats["created"] -= len(new_rows_data)
                     
-                    
+        except gspread.exceptions.SpreadsheetNotFound:
+            logger.error(f"Spreadsheet {self.sheet_id} not found. Please share the sheet with the service account email.")
+            return {"error": "Таблица не найдена или нет доступа. Добавьте email бота в настройки доступа таблицы."}
         except Exception as e:
             logger.exception("Global Sheet Sync Error")
             return {"error": str(e)}

@@ -21,6 +21,22 @@ class UserService:
             self.session.add(user)
             await self.session.commit()
             await self.session.refresh(user)
+        else:
+            # Update info if provided
+            updated = False
+            if first_name and user.name != first_name:
+                user.name = first_name
+                updated = True
+            
+            if username:
+                current_data = dict(user.profile_data) if user.profile_data else {}
+                if current_data.get("username") != username:
+                    current_data["username"] = username
+                    user.profile_data = current_data
+                    updated = True
+            
+            if updated:
+                await self.session.commit()
         
         return user
 

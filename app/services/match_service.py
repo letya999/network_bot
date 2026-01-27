@@ -28,6 +28,15 @@ class MatchService:
             f"Company: {contact.company}",
             f"Role: {contact.role}",
         ]
+
+        if contact.telegram_username:
+            lines.append(f"Telegram: @{contact.telegram_username}")
+        if contact.email:
+             lines.append(f"Email: {contact.email}")
+        if contact.phone:
+            lines.append(f"Phone: {contact.phone}")
+        if contact.linkedin_url:
+            lines.append(f"LinkedIn: {contact.linkedin_url}")
         
         if contact.what_looking_for:
             lines.append(f"Looking for: {contact.what_looking_for}")
@@ -98,10 +107,15 @@ class MatchService:
         Find matches between a new contact and the user's profile.
         Returns a dict with is_match, match_score, synergy_summary, suggested_pitch.
         """
-        if not user.profile_data:
+        if not user.profile_data and not user.name:
             return {"is_match": False, "match_score": 0, "synergy_summary": "Профиль пользователя не заполнен."}
 
-        profile_a = json.dumps(user.profile_data, ensure_ascii=False)
+        # Prepare user profile data with name
+        user_data = dict(user.profile_data) if user.profile_data else {}
+        if user.name and "name" not in user_data:
+            user_data["name"] = user.name
+            
+        profile_a = json.dumps(user_data, ensure_ascii=False)
         profile_b = self._format_contact_context(contact)
         
         prompt = self.gemini.get_prompt("find_matches")

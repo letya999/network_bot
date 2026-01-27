@@ -80,10 +80,10 @@ async def sync_sheets(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         async with AsyncSessionLocal() as session:
             user_service = UserService(session)
-            await user_service.get_or_create_user(user.id, user.username)
+            db_user = await user_service.get_or_create_user(user.id, user.username)
             
             contact_service = ContactService(session)
-            contacts = await contact_service.get_all_contacts(user.id)
+            contacts = await contact_service.get_all_contacts(db_user.id)
             
             if not contacts:
                 await status_msg.edit_text("❌ Нет контактов.")

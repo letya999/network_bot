@@ -16,7 +16,7 @@ async def find_matches_command(update: Update, context: ContextTypes.DEFAULT_TYP
     user = update.effective_user
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
-        db_user = await user_service.get_or_create_user(user.id)
+        db_user = await user_service.get_or_create_user(user.id, username=user.username, first_name=user.full_name)
         
         last_contact_id = context.user_data.get("last_contact_id")
         if not last_contact_id:
@@ -70,7 +70,7 @@ async def semantic_search_handler(update: Update, context: ContextTypes.DEFAULT_
     
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
-        db_user = await user_service.get_or_create_user(user.id)
+        db_user = await user_service.get_or_create_user(user.id, username=user.username, first_name=user.full_name)
         
         contact_service = ContactService(session)
         # First try basic search
@@ -98,7 +98,8 @@ async def semantic_search_callback(update: Update, context: ContextTypes.DEFAULT
     
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
-        db_user = await user_service.get_or_create_user(user_id)
+        user = update.effective_user
+        db_user = await user_service.get_or_create_user(user.id, username=user.username, first_name=user.full_name)
         await perform_semantic_search(update.callback_query.message, query_text, db_user.id, session)
 
 async def perform_semantic_search(message, query, user_id, session):
@@ -134,10 +135,27 @@ async def notify_match_if_any(update: Update, contact, user, session):
     match_data = await match_service.get_user_matches(contact, user)
     
     if match_data.get("is_match") and match_data.get("match_score", 0) > 70:
+        # Prepare contact display name
+        contact_display = contact.name
+        if contact.telegram_username:
+            contact_display += f" (@{contact.telegram_username.replace('@', '')})"
+
         text = f"🎯 *Найден матч!*\n\n"
-        text += f"Вы с {contact.name} можете быть полезны друг другу:\n"
+        text += f"Вы с {contact_display} можете быть полезны друг другу:\n"
         text += f"_{match_data.get('synergy_summary')}_\n\n"
-        text += f"Предлагаемый питч: {match_data.get('suggested_pitch')}"
+        text += f"Предлагаемый питч: {match_data.get('suggested_pitch')}\n\n"
+
+        # Add contact info block
+        info_lines = []
+        if contact.telegram_username:
+            info_lines.append(f"✈️ @{contact.telegram_username.replace('@', '')}")
+        if contact.email:
+            info_lines.append(f"📧 {contact.email}")
+        if contact.linkedin_url:
+            info_lines.append(f"🔗 {contact.linkedin_url}")
+        
+        if info_lines:
+            text += "*Контакты:*\n" + "\n".join(info_lines)
         
         # Use a button to set a reminder
         keyboard = [[InlineKeyboardButton("⏰ Напомнить написать", callback_data=f"remind_{contact.id}")]]

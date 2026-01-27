@@ -19,6 +19,31 @@ class NotionService:
             "Notion-Version": "2022-06-28",
             "Content-Type": "application/json"
         }
+        self.schema_map = {} # Canonical (lowercase) -> Actual Notion Property Name
+        self.schema_types = {} # Property Name -> Property Type
+
+    async def _ensure_schema(self, session: aiohttp.ClientSession):
+        """
+        Fetch database schema to map properties case-insensitively and avoid sending missing fields.
+        """
+        if self.schema_map:
+            return
+
+        url = f"{self.BASE_URL}/databases/{self.database_id}"
+        async with session.get(url, headers=self.headers) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                logger.error(f"Failed to fetch Notion DB schema ({resp.status}): {text}")
+                return
+            
+            data = await resp.json()
+            properties = data.get("properties", {})
+            
+            for prop_name, prop_data in properties.items():
+                self.schema_map[prop_name.lower()] = prop_name
+                self.schema_types[prop_name] = prop_data.get("type")
+                
+            logger.info(f"Loaded Notion schema: {list(self.schema_map.keys())}")
 
     async def sync_contacts(self, contacts: List[Contact]) -> Dict[str, int]:
         """
@@ -32,6 +57,9 @@ class NotionService:
         stats = {"created": 0, "updated": 0, "failed": 0, "skipped": 0}
 
         async with aiohttp.ClientSession() as session:
+            # 0. Load Schema
+            await self._ensure_schema(session)
+            
             # 1. Get existing pages to avoid duplicates (naive check by Name)
             existing_pages = await self._get_existing_pages(session)
             
@@ -81,12 +109,11 @@ class NotionService:
                 
                 for page in results:
                     props = page.get("properties", {})
-                    # Assuming "Name" is the title property. Adjust if needed.
-                    # We look for the property that is of type 'title'
+                    # Find title property dynamically using schema or searching
                     title_prop_name = None
+                    
+                    # Try to find 'title' type property
                     for key, val in props.items():
-                        if val.get("id") == "title": # This is internal ID, but type is safer
-                            pass
                         if val.get("type") == "title":
                             title_prop_name = key
                             break
@@ -118,6 +145,9 @@ class NotionService:
     async def _update_page(self, session: aiohttp.ClientSession, page_id: str, contact: Contact):
         url = f"{self.BASE_URL}/pages/{page_id}"
         properties = self._map_contact_to_properties(contact)
+        if not properties:
+            return 
+
         payload = {
             "properties": properties
         }
@@ -130,69 +160,116 @@ class NotionService:
     def _map_contact_to_properties(self, contact: Contact) -> Dict[str, Any]:
         """
         Maps Contact model fields to Notion Database properties.
-        This assumes a specific schema in Notion.
-        Users should create a DB with these columns or we fail gracefully if cols don't exist (Notion ignores unknown props usually? No, it errors if prop missing).
-        
-        To make it robust, we should only send properties that match the simple types.
+        Only includes properties that exist in the target database.
+        Automatically adapts value format to the target property type.
         """
-        # We assume the user has flexible setup. We'll map standard fields.
-        # Note: In a real prod app, we might query the DB schema first to see what columns exist.
-        # For this MVP, we enforce a schema or try to send common ones.
-        
         props = {}
 
-        # 1. Name (Title)
-        props["Name"] = {
-            "title": [{"text": {"content": contact.name or "Unknown"}}]
-        }
-
-        # 2. Company (Rich Text)
-        if contact.company:
-            props["Company"] = {
-                "rich_text": [{"text": {"content": contact.company}}]
-            }
-        
-        # 3. Role (Rich Text)
-        if contact.role:
-            props["Role"] = {
-                "rich_text": [{"text": {"content": contact.role}}]
-            }
-
-        # 4. Email (Email)
-        if contact.email:
-            props["Email"] = {
-                "email": contact.email
-            }
+        def add_prop(canonical: str, value: Any):
+            actual_name = self.schema_map.get(canonical.lower())
+            if not actual_name:
+                return # Skip if property doesn't exist in Notion DB
             
-        # 5. Phone (Phone)
-        if contact.phone:
-            props["Phone"] = {
-                "phone_number": contact.phone
-            }
+            # Determine type from schema matches
+            prop_type = self.schema_types.get(actual_name)
+            if not prop_type:
+                return 
 
-        # 6. Telegram (Url or Text)
+            # Construct payload based on ACTUAL Notion type, not our assumption
+            if prop_type == "title":
+                props[actual_name] = {"title": [{"text": {"content": str(value)}}]}
+                
+            elif prop_type == "rich_text":
+                # Convert anything to string for rich_text
+                text_val = str(value)
+                if isinstance(value, list):
+                    text_val = ", ".join([str(v) for v in value])
+                props[actual_name] = {"rich_text": [{"text": {"content": text_val}}]}
+                
+            elif prop_type == "email":
+                props[actual_name] = {"email": str(value)}
+                
+            elif prop_type == "phone_number":
+                props[actual_name] = {"phone_number": str(value)}
+                
+            elif prop_type == "url":
+                props[actual_name] = {"url": str(value)}
+                
+            elif prop_type == "select":
+                # Expects: {"name": "OptionName"}
+                val_str = str(value)
+                # Notion select options can't be empty or too long
+                if val_str:
+                    props[actual_name] = {"select": {"name": val_str[:100]}}
+                    
+            elif prop_type == "multi_select":
+                # Expects: [{"name": "Option1"}, {"name": "Option2"}]
+                if isinstance(value, list):
+                    # Already a list (of dicts or strings?)
+                    # If it's a list of dicts from our logic below
+                    formatted = []
+                    for item in value:
+                        if isinstance(item, dict) and "name" in item:
+                            formatted.append(item)
+                        elif isinstance(item, str):
+                            formatted.append({"name": item[:100].replace(",", "")})
+                    props[actual_name] = {"multi_select": formatted}
+                else:
+                    # Single value but target is multi_select
+                    if value:
+                        props[actual_name] = {"multi_select": [{"name": str(value)[:100]}]}
+                        
+            elif prop_type == "date":
+                props[actual_name] = {"date": {"start": str(value)}}
+
+        # 1. Name (Title)
+        add_prop("name", contact.name or "Unknown")
+
+        # 2. Company
+        if contact.company:
+            add_prop("company", contact.company)
+        
+        # 3. Role
+        if contact.role:
+            add_prop("role", contact.role)
+
+        # 4. Email
+        if contact.email:
+            add_prop("email", contact.email)
+            
+        # 5. Phone
+        if contact.phone:
+            add_prop("phone", contact.phone)
+
+        # 6. Telegram
         if contact.telegram_username:
-            # Clean username
             tg = contact.telegram_username
             url = f"https://t.me/{tg.replace('@', '')}"
-            props["Telegram"] = {
-                "url": url
-            }
-
-        # 7. Status (Select)
-        if contact.status:
-            props["Status"] = {
-                "select": {"name": contact.status}
-            }
             
-        # 8. Topics (Multi-select)
+            # Check aliases
+            for alias in ["telegram", "telegram_username", "tg", "t.me"]:
+                if self.schema_map.get(alias):
+                    add_prop(alias, url)
+                    break
+
+        # 7. Status
+        if contact.status:
+            # We pass the raw string, `add_prop` handles if it needs select or multi_select wrapper
+            add_prop("status", contact.status)
+            
+        # 8. Topics
         if contact.topics:
-            # Limit to 100 chars per option as per Notion limits?
-            # Also multi-select options must be created if not exist, Notion does this auto if configured?
-            # Creating options via API inside property value works for Select/Multi-select in pages.
-            options = [{"name": t[:100]} for t in contact.topics[:10]] # Limit to 10 topics
-            props["Topics"] = {
-                "multi_select": options
-            }
+            # We pass raw list of strings
+            add_prop("topics", contact.topics)
+            
+        # 9. Event
+        if contact.event_name:
+            add_prop("event", contact.event_name)
+            
+        # 10. Data (Date)
+        if contact.event_date:
+            add_prop("date", contact.event_date)
+            # Support alias 'Event Date' or 'Date'
+            add_prop("event date", contact.event_date)
 
         return props
