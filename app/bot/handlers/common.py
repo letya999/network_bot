@@ -84,25 +84,31 @@ def get_contact_keyboard(contact):
     """Generate inline keyboard for contact card."""
     keyboard = []
 
-    # Add OSINT related buttons
-    if not contact.osint_data or contact.osint_data.get("no_results"):
-        keyboard.append([
-            InlineKeyboardButton("🔍 Найти информацию", callback_data=f"enrich_start_{contact.id}")
-        ])
-    else:
-        keyboard.append([
-            InlineKeyboardButton("🔄 Обновить данные", callback_data=f"enrich_start_{contact.id}")
-        ])
-
-    # Add "Generate Card" button
-    keyboard.append([
-        InlineKeyboardButton("✨ Визитка для него", callback_data=f"gen_card_{contact.id}")
-    ])
+    # Updated keyboard structure
     
-    # Export Buttons
-    keyboard.append([
-        InlineKeyboardButton("📤 в Notion", callback_data=f"export_notion_{contact.id}"),
-        InlineKeyboardButton("📊 в Sheets", callback_data=f"export_sheets_{contact.id}")
-    ])
+    # Row 1: Main Actions
+    row1 = [
+        InlineKeyboardButton("👁 Подробнее", callback_data=f"contact_view_{contact.id}"),
+        InlineKeyboardButton("✏️ Изменить", callback_data=f"contact_edit_{contact.id}")
+    ]
+    keyboard.append(row1)
+
+    # Row 2: Enrichment & Tools
+    row2 = []
+    if not contact.osint_data or contact.osint_data.get("no_results"):
+        row2.append(InlineKeyboardButton("🌍 OSINT", callback_data=f"enrich_start_{contact.id}"))
+    else:
+        row2.append(InlineKeyboardButton("🔄 Обновить OSINT", callback_data=f"enrich_start_{contact.id}"))
+        
+    row2.append(InlineKeyboardButton("✨ Визитка", callback_data=f"gen_card_{contact.id}"))
+    keyboard.append(row2)
+    
+    # Row 3: Export & Delete
+    row3 = [
+        InlineKeyboardButton("📥 Notion", callback_data=f"export_notion_{contact.id}"),
+        InlineKeyboardButton("📊 Sheets", callback_data=f"export_sheets_{contact.id}"),
+        InlineKeyboardButton("🗑", callback_data=f"contact_del_ask_{contact.id}")
+    ]
+    keyboard.append(row3)
 
     return InlineKeyboardMarkup(keyboard) if keyboard else None

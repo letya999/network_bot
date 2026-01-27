@@ -1,43 +1,13 @@
 
 import logging
-from telegram import Update
-from telegram.ext import ContextTypes
-from app.db.session import AsyncSessionLocal
-from app.services.user_service import UserService
-from app.services.contact_service import ContactService
-from app.services.notion_service import NotionService
-from app.services.sheets_service import SheetsService
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup # Added imports
 
-logger = logging.getLogger(__name__)
-
-async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Handle /sync command.
-    Usage: /sync notion | /sync sheets
-    """
-    user = update.effective_user
-    args = context.args
-    
-    if not args:
-        await update.message.reply_text(
-            "⚠️ Использование: `/sync <service>`\n"
-            "Доступные сервисы: `notion`, `sheets`",
-            parse_mode="Markdown"
-        )
-        return
-
-    service_name = args[0].lower()
-    
-    if service_name == "notion":
-        await sync_notion(update, context)
-    elif service_name == "sheets":
-        await sync_sheets(update, context)
-    else:
-        await update.message.reply_text(f"❌ Неизвестный сервис: {service_name}")
+# ... (omitted)
 
 async def sync_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    status_msg = await update.message.reply_text("🔄 Начинаю синхронизацию с Notion...")
+    message = update.effective_message
+    status_msg = await message.reply_text("🔄 Начинаю синхронизацию с Notion...")
     
     try:
         async with AsyncSessionLocal() as session:
@@ -54,7 +24,11 @@ async def sync_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return
 
             # Sync
-            notion_service = NotionService()
+            user_settings = db_user.settings or {}
+            notion_service = NotionService(
+                api_key=user_settings.get("notion_api_key"),
+                database_id=user_settings.get("notion_database_id")
+            )
             result = await notion_service.sync_contacts(contacts)
             
             if "error" in result:
@@ -75,7 +49,8 @@ async def sync_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def sync_sheets(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    status_msg = await update.message.reply_text("🔄 Начинаю синхронизацию с Google Sheets...")
+    message = update.effective_message
+    status_msg = await message.reply_text("🔄 Начинаю синхронизацию с Google Sheets...")
     
     try:
         async with AsyncSessionLocal() as session:
@@ -89,7 +64,20 @@ async def sync_sheets(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await status_msg.edit_text("❌ Нет контактов.")
                 return
 
-            service = SheetsService()
+            user_settings = db_user.settings or {}
+            google_creds = {
+                 "project_id": user_settings.get("google_proj_id"),
+                 "private_key_id": user_settings.get("google_private_key_id"),
+                 "private_key": user_settings.get("google_private_key"),
+                 "client_email": user_settings.get("google_client_email")
+            }
+            # Clean empty keys
+            google_creds = {k: v for k, v in google_creds.items() if v}
+
+            service = SheetsService(
+                sheet_id=user_settings.get("google_sheet_id"),
+                google_creds=google_creds if google_creds else None
+            )
             result = await service.sync_contacts(contacts)
             
             if "error" in result:
@@ -137,12 +125,31 @@ async def export_contact_callback(update: Update, context: ContextTypes.DEFAULT_
                 await query.message.reply_text("❌ Контакт не найден.")
                 return
 
+            # Get User to fetch settings
+            from app.models.user import User
+            db_user = await session.get(User, contact.user_id)
+            user_settings = db_user.settings if db_user else {}
+            
             if service_type == "notion":
-                service = NotionService()
+                service = NotionService(
+                    api_key=user_settings.get("notion_api_key"),
+                    database_id=user_settings.get("notion_database_id")
+                )
                 # We reuse sync_contacts but just for one
                 result = await service.sync_contacts([contact])
             else:
-                service = SheetsService()
+                google_creds = {
+                     "project_id": user_settings.get("google_proj_id"),
+                     "private_key_id": user_settings.get("google_private_key_id"),
+                     "private_key": user_settings.get("google_private_key"),
+                     "client_email": user_settings.get("google_client_email")
+                }
+                google_creds = {k: v for k, v in google_creds.items() if v}
+                
+                service = SheetsService(
+                    sheet_id=user_settings.get("google_sheet_id"),
+                    google_creds=google_creds if google_creds else None
+                )
                 result = await service.sync_contacts([contact])
 
             if "error" in result:

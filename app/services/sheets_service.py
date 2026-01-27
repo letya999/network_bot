@@ -21,8 +21,8 @@ class SheetsService:
         "https://www.googleapis.com/auth/drive"
     ]
 
-    def __init__(self):
-        self.sheet_id = settings.GOOGLE_SHEET_ID
+    def __init__(self, sheet_id: str = None, google_creds: Dict[str, str] = None):
+        self.sheet_id = sheet_id or settings.GOOGLE_SHEET_ID
         if self.sheet_id:
             # Clean sheet ID if user pasted full URL or path
             # Remove "https://docs.google.com/spreadsheets/d/" if present
@@ -31,6 +31,9 @@ class SheetsService:
             elif self.sheet_id.startswith("d/"): # Handle cases like 'd/ID'
                  self.sheet_id = self.sheet_id[2:].split("/")[0]
         self.client = None
+        
+        # Determine if we have credentials (either passed or in settings)
+        self.google_creds = google_creds
         
         if HAS_GSPREAD and self._has_credentials():
             try:
@@ -42,9 +45,35 @@ class SheetsService:
 
     def _has_credentials(self):
         # Minimal check
+        if self.google_creds:
+             return bool(self.google_creds.get("private_key") and self.google_creds.get("client_email"))
         return bool(settings.GOOGLE_PRIVATE_KEY and settings.GOOGLE_CLIENT_EMAIL)
 
     def _get_creds_dict(self):
+        if self.google_creds:
+            # If explicit creds provided, use them (assumed to be in correct dict format or close to it)
+             # But we need to ensure the format matches what Credentials.from_service_account_info expects
+             # The user creates this dict in the handler or we construct it.
+             # If passed from User settings, it might be individual fields.
+             
+             # Let's assume google_creds contains the fields we need:
+             pk = self.google_creds.get("private_key", "")
+             if pk and "\\n" in pk:
+                 pk = pk.replace("\\n", "\n")
+
+             return {
+                "type": "service_account",
+                "project_id": self.google_creds.get("project_id", ""),
+                "private_key_id": self.google_creds.get("private_key_id", ""),
+                "private_key": pk,
+                "client_email": self.google_creds.get("client_email", ""),
+                "client_id": "TODO",
+                "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                "token_uri": "https://oauth2.googleapis.com/token",
+                "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+                "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{self.google_creds.get('client_email', '')}"
+             }
+             
         # Reconstruct JSON from env vars
         pk = settings.GOOGLE_PRIVATE_KEY
         if pk and "\\n" in pk:

@@ -14,6 +14,12 @@ async def show_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Shows the current extraction prompt for the user.
     """
+    if update.callback_query:
+        await update.callback_query.answer()
+        message = update.callback_query.message
+    else:
+        message = update.message
+        
     user = update.effective_user
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
@@ -27,7 +33,7 @@ async def show_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
             prompt = gemini.get_prompt("extract_contact")
             source = "Default (System)"
             
-        await update.message.reply_text(
+        await message.reply_text(
             f"📜 *Текущий Промпт* ({source}):\n\n"
             f"```\n{prompt}\n```\n\n"
             "Используй /edit_prompt чтобы изменить его.\n"
@@ -39,7 +45,13 @@ async def start_edit_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Starts the conversation to edit the prompt.
     """
-    await update.message.reply_text(
+    if update.callback_query:
+        await update.callback_query.answer()
+        message = update.callback_query.message
+    else:
+        message = update.message
+
+    await message.reply_text(
         "Пришли мне новый текст промпта.\n"
         "Ты можешь скопировать текущий (/prompt) и отредактировать его.\n"
         "Отправь /cancel чтобы отменить."

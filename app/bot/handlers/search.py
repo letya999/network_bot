@@ -16,6 +16,13 @@ async def list_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     user = update.effective_user
     logger.info(f"User {user.id} requested contact list.")
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        message = update.callback_query.message
+    else:
+        message = update.message
+
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
         db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
@@ -24,7 +31,7 @@ async def list_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         contacts = await contact_service.get_recent_contacts(db_user.id)
         
         if not contacts:
-            await update.message.reply_text("У тебя пока нет контактов.")
+            await message.reply_text("У тебя пока нет контактов.")
             return
 
         text = "📋 Твои последние контакты:\n\n"
@@ -34,7 +41,7 @@ async def list_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text += f" — {contact.company}"
             text += "\n"
         
-        await update.message.reply_text(text)
+        await message.reply_text(text)
 
 async def find_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -44,6 +51,12 @@ async def find_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user = update.effective_user
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.message.reply_text("🔍 Чтобы найти контакт, отправьте команду:\n`/find Имя` или `/find Компания`", parse_mode="Markdown")
+        return
+
     if not context.args:
         await update.message.reply_text("Использование: /find <имя или компания>")
         return
@@ -97,7 +110,14 @@ async def export_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     user = update.effective_user
     logger.info(f"User {user.id} requested export.")
-    status_msg = await update.message.reply_text("⏳ Генерирую экспорт...")
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        message = update.callback_query.message
+    else:
+        message = update.message
+
+    status_msg = await message.reply_text("⏳ Генерирую экспорт...")
     
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
@@ -111,7 +131,7 @@ async def export_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         csv_file = ExportService.to_csv(contacts)
-        await update.message.reply_document(
+        await message.reply_document(
             document=csv_file,
             filename="my_contacts.csv",
             caption=f"Экспорт {len(contacts)} контактов."

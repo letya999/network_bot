@@ -193,3 +193,36 @@ class ContactService:
         )
         result = await self.session.execute(stmt)
         return result.scalars().first()
+
+    async def get_contact_by_id(self, contact_id: uuid.UUID) -> Contact:
+        """
+        Get a specific contact by its ID.
+        """
+        # Ensure contact_id is a UUID object (if passed as str)
+        if isinstance(contact_id, str):
+            try:
+                contact_id = uuid.UUID(contact_id)
+            except ValueError:
+                return None
+                
+        result = await self.session.execute(select(Contact).where(Contact.id == contact_id))
+        return result.scalars().one_or_none()
+
+    async def delete_contact(self, contact_id: uuid.UUID) -> bool:
+        """
+        Delete a contact by ID.
+        """
+        if isinstance(contact_id, str):
+            try:
+                contact_id = uuid.UUID(contact_id)
+            except ValueError:
+                return False
+                
+        result = await self.session.execute(select(Contact).where(Contact.id == contact_id))
+        contact = result.scalar_one_or_none()
+        
+        if contact:
+            await self.session.delete(contact)
+            await self.session.commit()
+            return True
+        return False

@@ -11,9 +11,9 @@ logger = logging.getLogger(__name__)
 class NotionService:
     BASE_URL = "https://api.notion.com/v1"
 
-    def __init__(self):
-        self.api_key = settings.NOTION_API_KEY
-        self.database_id = settings.NOTION_DATABASE_ID
+    def __init__(self, api_key: str = None, database_id: str = None):
+        self.api_key = api_key or settings.NOTION_API_KEY
+        self.database_id = database_id or settings.NOTION_DATABASE_ID
         self.headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Notion-Version": "2022-06-28",

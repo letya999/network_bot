@@ -45,7 +45,12 @@ async def enrich_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
 
         contact_service = ContactService(session)
-        osint_service = OSINTService(session)
+        user_settings = db_user.settings or {}
+        osint_service = OSINTService(
+            session,
+            tavily_api_key=user_settings.get("tavily_api_key"),
+            gemini_api_key=user_settings.get("gemini_api_key")
+        )
 
         contact = None
 
@@ -124,7 +129,16 @@ async def enrich_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
              if contact:
                  # Clean way: redirect to search logic, but we need to Duplicate code slightly or split func
                  # For brevity, let's just edit message "Searching..." and call search_potential_profiles
-                 osint_service = OSINTService(session)
+                 # Re-init service with creds
+                 user_service = UserService(session)
+                 db_user = await user_service.get_or_create_user(update.effective_user.id)
+                 user_settings = db_user.settings or {}
+                 
+                 osint_service = OSINTService(
+                    session,
+                    tavily_api_key=user_settings.get("tavily_api_key"),
+                    gemini_api_key=user_settings.get("gemini_api_key")
+                 )
                  await query.edit_message_text(f"🕵️‍♂️ Ищу профили *{contact.name}*...", parse_mode="Markdown")
                  candidates = await osint_service.search_potential_profiles(contact.id)
                  if not candidates:
@@ -155,7 +169,16 @@ async def enrich_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(f"⏳ Анализирую профиль: {linkedin_url}\n_Это займет 10-20 секунд..._", parse_mode="Markdown")
         
         async with AsyncSessionLocal() as session:
-            osint_service = OSINTService(session)
+            # Need user settings
+            user_service = UserService(session)
+            db_user = await user_service.get_or_create_user(update.effective_user.id)
+            user_settings = db_user.settings or {}
+            
+            osint_service = OSINTService(
+                session,
+                tavily_api_key=user_settings.get("tavily_api_key"),
+                gemini_api_key=user_settings.get("gemini_api_key")
+            )
             try:
                 result = await osint_service.enrich_contact_final(uuid.UUID(contact_id), linkedin_url)
                 
@@ -239,7 +262,13 @@ async def start_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     /import - Start LinkedIn CSV import process.
     """
-    await update.message.reply_text(
+    if update.callback_query:
+        await update.callback_query.answer()
+        message = update.callback_query.message
+    else:
+        message = update.message
+
+    await message.reply_text(
         "📥 *Импорт контактов из LinkedIn*\n\n"
         "Чтобы экспортировать контакты из LinkedIn:\n"
         "1. Перейди в Settings & Privacy → Data Privacy\n"
@@ -442,7 +471,12 @@ async def batch_enrich_callback(update: Update, context: ContextTypes.DEFAULT_TY
             user_service = UserService(session)
             db_user = await user_service.get_or_create_user(user.id)
 
-            osint_service = OSINTService(session)
+            user_settings = db_user.settings or {}
+            osint_service = OSINTService(
+                session,
+                tavily_api_key=user_settings.get("tavily_api_key"),
+                gemini_api_key=user_settings.get("gemini_api_key")
+            )
             result = await osint_service.batch_enrich(db_user.id, limit=5)
 
             if result["status"] == "complete":

@@ -10,11 +10,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 class GeminiService:
-    def __init__(self):
-        if settings.GEMINI_API_KEY:
-            genai.configure(api_key=settings.GEMINI_API_KEY)
-            # Using 'latest' alias which usually points to the current stable model
-            self.model = genai.GenerativeModel('gemini-flash-latest')
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or settings.GEMINI_API_KEY
+        if self.api_key:
+            try:
+                genai.configure(api_key=self.api_key)
+                # Using 'latest' alias which usually points to the current stable model
+                self.model = genai.GenerativeModel('gemini-flash-latest')
+            except Exception as e:
+                logger.error(f"Failed to configure Gemini: {e}")
+                self.model = None
         else:
             self.model = None
 

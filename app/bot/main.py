@@ -14,8 +14,16 @@ from app.bot.profile_handlers import (
 )
 from app.bot.handlers.assets_handler import (
     start_assets, asset_menu_callback, asset_action_callback,
-    save_asset_name, save_asset_content, cancel_asset_op,
+    save_asset_name, save_asset_content, cancel_asset_op, show_asset_list,
     ASSET_MENU, ASSET_INPUT_NAME, ASSET_INPUT_CONTENT
+)
+from app.bot.handlers.menu_handlers import (
+    start_menu, menu_callback, 
+    MAIN_MENU, PROFILE_MENU, MATERIALS_MENU, NETWORKING_MENU, TOOLS_MENU, SETTINGS_MENU
+)
+from app.bot.handlers.contact_detail_handlers import (
+    view_contact, delete_contact_ask, delete_contact_confirm, edit_contact_start, cancel_contact_edit,
+    CONTACT_VIEW_PREFIX, CONTACT_EDIT_PREFIX, CONTACT_DEL_ASK_PREFIX, CONTACT_DEL_CONFIRM_PREFIX
 )
 
 from app.bot.reminder_handlers import list_reminders, reminder_action_callback
@@ -26,10 +34,66 @@ from app.bot.osint_handlers import (
     start_import, handle_csv_import, cancel_import, WAITING_FOR_CSV,
     enrichment_stats, batch_enrich_callback
 )
-from app.bot.integration_handlers import sync_command, export_contact_callback
+from app.bot.integration_handlers import sync_command, export_contact_callback, sync_run_callback
 from app.bot.rate_limiter import rate_limiter
+from app.bot.handlers.credentials_handlers import (
+    set_credentials_command, service_choice_callback, handle_input, cancel_creds,
+    SELECT_SERVICE, WAITING_INPUT
+)
 
 logger = logging.getLogger(__name__)
+
+# Wrappers for asset start to set type
+async def start_pitches(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["current_asset_type"] = "pitch"
+    return await start_assets(update, context)
+
+async def start_onepagers(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["current_asset_type"] = "one_pager"
+    return await start_assets(update, context)
+
+async def start_greetings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["current_asset_type"] = "greeting"
+    return await start_assets(update, context)
+
+async def route_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Dispatcher for menu commands (start with cmd_) that are NOT conversation entry points.
+    """
+    query = update.callback_query
+    data = query.data
+    cmd = data.replace("cmd_", "")
+    
+    if cmd == "card":
+        return await send_card(update, context)
+    elif cmd == "share":
+        return await share_card(update, context)
+         
+    elif cmd == "list":
+        return await list_contacts(update, context)
+    elif cmd == "find":
+        return await find_contact(update, context)
+    elif cmd == "matches":
+        return await find_matches_command(update, context)
+    elif cmd == "reminders":
+        return await list_reminders(update, context)
+        
+    elif cmd == "export":
+        return await export_contacts(update, context)
+    elif cmd == "sync":
+        return await sync_command(update, context)
+        
+    elif cmd == "prompt":
+        return await show_prompt(update, context)
+    elif cmd == "stats":
+        return await show_stats(update, context)
+    elif cmd == "event":
+        return await set_event_mode(update, context)
+        
+    await query.answer("Опция в разработке...")
+
+async def materials_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Используйте меню: /start -> Мои материалы")
 
 async def post_init(application):
     """
@@ -37,26 +101,11 @@ async def post_init(application):
     """
     bot = application.bot
     commands = [
-        BotCommand("start", "Запустить бота"),
-        BotCommand("profile", "Мой профиль"),
-        BotCommand("card", "Моя визитка"),
-        BotCommand("share", "Поделиться профилем"),
-        BotCommand("list", "Показать список контактов"),
-        BotCommand("find", "Найти контакт"),
-        BotCommand("export", "Экспорт контактов в CSV"),
-        BotCommand("enrich", "Найти публичную информацию"),
-        BotCommand("import", "Импорт из LinkedIn CSV"),
-        BotCommand("prompt", "Показать текущий промпт"),
-        BotCommand("edit_prompt", "Изменить промпт"),
-        BotCommand("reminders", "Мои напоминания"),
-        BotCommand("stats", "Статистика нетворкинга"),
-        BotCommand("matches", "Найти синергии"),
-        BotCommand("event", "Режим мероприятия (Context Mode)"),
-        BotCommand("sync", "Синхронизация (Notion/Sheets)"),
-        # Asset commands
-        BotCommand("pitches", "Управление питчами"),
-        BotCommand("onepagers", "Управление ванпейджерами"),
-        BotCommand("greetings", "Управление приветствиями"),
+        BotCommand("start", "🏠 Главное меню"),
+        BotCommand("card", "📇 Моя визитка"),
+        BotCommand("find", "🔍 Найти контакт"),
+        BotCommand("profile", "👤 Профиль"),
+        BotCommand("materials", "📂 Мои материалы"),
     ]
     await bot.set_my_commands(commands)
     logger.info(f"Bot commands set: {commands}")
@@ -83,7 +132,8 @@ async def log_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = update.message
     
     log_text = f"\n--- NEW UPDATE ---\n"
-    log_text += f"User: {user.first_name} (ID: {user.id}) @{user.username}\n"
+    if user:
+         log_text += f"User: {user.first_name} (ID: {user.id}) @{user.username}\n"
     if chat:
         log_text += f"Chat: {chat.type} (ID: {chat.id})\n"
     
@@ -111,9 +161,13 @@ def create_bot():
     # Log all updates
     app.add_handler(TypeHandler(Update, log_update), group=-1)
     
-    app.add_handler(CommandHandler("start", start))
+    # Override /start to use new menu
+    app.add_handler(CommandHandler("start", start_menu))
+    
+    # Standard Commands
+    app.add_handler(CommandHandler("menu", start_menu))
     app.add_handler(CommandHandler("list", list_contacts))
-    app.add_handler(CommandHandler("find", semantic_search_handler))
+    app.add_handler(CommandHandler("find", semantic_search_handler)) # Keep semantic search on /find
     app.add_handler(CommandHandler("stats", show_stats))
     app.add_handler(CommandHandler("matches", find_matches_command))
     app.add_handler(CommandHandler("export", export_contacts))
@@ -122,6 +176,9 @@ def create_bot():
     app.add_handler(CommandHandler("event", set_event_mode))
     app.add_handler(CommandHandler("sync", sync_command))
     
+    # Materials shortcut
+    app.add_handler(CommandHandler("materials", start_menu)) # Redirects to start is fine, or improve later
+
     prompt_conv = ConversationHandler(
         entry_points=[CommandHandler("edit_prompt", start_edit_prompt)],
         states={
@@ -134,9 +191,16 @@ def create_bot():
     profile_conv = ConversationHandler(
         entry_points=[
             CommandHandler("profile", show_profile),
+            CallbackQueryHandler(show_profile, pattern="^cmd_profile$"),
+
             CommandHandler("pitches", start_assets),
+            CallbackQueryHandler(start_pitches, pattern="^cmd_pitches$"),
+
             CommandHandler("onepagers", start_assets),
-            CommandHandler("greetings", start_assets)
+            CallbackQueryHandler(start_onepagers, pattern="^cmd_onepagers$"),
+
+            CommandHandler("greetings", start_assets),
+            CallbackQueryHandler(start_greetings, pattern="^cmd_greetings$"),
         ],
         states={
             SELECT_FIELD: [CallbackQueryHandler(handle_edit_callback)],
@@ -151,7 +215,6 @@ def create_bot():
         },
         fallbacks=[
             CommandHandler("cancel", cancel_edit),
-            # Support switching commands
             CommandHandler("pitches", start_assets),
             CommandHandler("onepagers", start_assets),
             CommandHandler("greetings", start_assets),
@@ -173,7 +236,10 @@ def create_bot():
 
     # LinkedIn CSV Import
     import_conv = ConversationHandler(
-        entry_points=[CommandHandler("import", start_import)],
+        entry_points=[
+            CommandHandler("import", start_import),
+            CallbackQueryHandler(start_import, pattern="^cmd_import$")
+        ],
         states={
             WAITING_FOR_CSV: [MessageHandler(filters.Document.ALL, handle_csv_import)],
         },
@@ -181,14 +247,44 @@ def create_bot():
     )
     app.add_handler(import_conv)
 
+    # Credentials Setup
+    creds_conv = ConversationHandler(
+        entry_points=[
+            CommandHandler("set_credentials", set_credentials_command),
+            CallbackQueryHandler(set_credentials_command, pattern="^cmd_credentials$")
+        ],
+        states={
+            SELECT_SERVICE: [CallbackQueryHandler(service_choice_callback)],
+            WAITING_INPUT: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_input)]
+        },
+        fallbacks=[CommandHandler("cancel", cancel_creds)]
+    )
+    app.add_handler(creds_conv)
+
     app.add_handler(CommandHandler("card", send_card))
     app.add_handler(CommandHandler("share", share_card))
     
-    # Callback for finding contacts card generation
+    # --- New Menu Handlers ---
+    # Menu navigation
+    app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu_"))
+    # Command routing from menu
+    app.add_handler(CallbackQueryHandler(route_menu_command, pattern="^cmd_"))
+    
+    # Detail Handlers
+    app.add_handler(CallbackQueryHandler(view_contact, pattern=f"^{CONTACT_VIEW_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(edit_contact_start, pattern=f"^{CONTACT_EDIT_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(delete_contact_ask, pattern=f"^{CONTACT_DEL_ASK_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(delete_contact_confirm, pattern=f"^{CONTACT_DEL_CONFIRM_PREFIX}"))
+
+    # Global Cancel for non-conversation states (e.g. contact edit)
+    app.add_handler(CommandHandler("cancel", cancel_contact_edit))
+
+    # Existing Callbacks
     app.add_handler(CallbackQueryHandler(generate_card_callback, pattern="^gen_card_"))
     app.add_handler(CallbackQueryHandler(card_pitch_selection_callback, pattern="^card_pitch_"))
     app.add_handler(CallbackQueryHandler(semantic_search_callback, pattern="^semantic_"))
     app.add_handler(CallbackQueryHandler(export_contact_callback, pattern="^export_"))
+    app.add_handler(CallbackQueryHandler(sync_run_callback, pattern="^sync_run_"))
     
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))

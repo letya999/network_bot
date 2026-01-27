@@ -36,22 +36,28 @@ logger = logging.getLogger(__name__)
 class OSINTService:
     """Service for enriching contacts with OSINT data."""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, tavily_api_key: str = None, gemini_api_key: str = None):
         self.session = session
-        self.gemini = GeminiService()
+        self.tavily_api_key = tavily_api_key or settings.TAVILY_API_KEY
+        self.gemini = GeminiService(api_key=gemini_api_key)
 
     async def _tavily_search(self, query: str, include_domains: List[str] = None) -> List[Dict[str, Any]]:
         """
         Perform a search using Tavily AI API.
         Returns rich results with content.
         """
-        if not settings.TAVILY_API_KEY:
+    async def _tavily_search(self, query: str, include_domains: List[str] = None) -> List[Dict[str, Any]]:
+        """
+        Perform a search using Tavily AI API.
+        Returns rich results with content.
+        """
+        if not self.tavily_api_key:
             logger.warning("Tavily API key not configured")
             return []
 
         url = "https://api.tavily.com/search"
         payload = {
-            "api_key": settings.TAVILY_API_KEY,
+            "api_key": self.tavily_api_key,
             "query": query,
             "search_depth": TAVILY_SEARCH_DEPTH,  # "basic" or "advanced"
             "include_answer": False,

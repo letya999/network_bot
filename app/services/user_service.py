@@ -54,3 +54,8 @@ class UserService:
             await self.session.commit()
             await self.session.refresh(user)
         return user
+
+    async def get_all_users(self):
+        stmt = select(User)
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
