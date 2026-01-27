@@ -103,6 +103,10 @@ async def asset_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         return ConversationHandler.END
         
     if data == "asset_add":
+        # Clear any previous edit state
+        context.user_data.pop("edit_mode", None)
+        context.user_data.pop("current_asset_id", None)
+        
         config = ASSET_CONFIG[context.user_data["current_asset_type"]]
         await query.edit_message_text(
             f"Введите *название* для нового {config['label']} (для кнопок):\n\n_Нажмите /cancel для отмены_",
@@ -185,6 +189,8 @@ async def save_asset_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if edit_mode == "name":
         # Editing existing name
         item_id = context.user_data["current_asset_id"]
+        found = False
+        
         async with AsyncSessionLocal() as session:
             service = ProfileService(session)
             profile = await service.get_profile(user.id)
@@ -193,16 +199,19 @@ async def save_asset_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for item in items:
                 if item.id == item_id:
                     item.name = name
+                    found = True
                     break
             
-            serialized_items = [i.model_dump(mode='json') for i in items]
-            await service.update_profile_field(user.id, config["field"], serialized_items)
+            if found:
+                serialized_items = [i.model_dump(mode='json') for i in items]
+                await service.update_profile_field(user.id, config["field"], serialized_items)
             
-        await update.message.reply_text("✅ Название обновлено!")
-        # Fake update for callback logic if needed or just show detail
-        # Cannot easily jump back to message edit from here without sending new message
-        # Let's send new message with detail
-        return await show_asset_detail_message(update, context)
+        if found:
+            await update.message.reply_text("✅ Название обновлено!")
+            return await show_asset_detail_message(update, context)
+        else:
+            await update.message.reply_text("❌ Элемент не найден.")
+            return await show_asset_list(update, context)
     else:
         # Adding new -> First step is name, next is content
         context.user_data["new_asset_name"] = name
@@ -220,6 +229,7 @@ async def save_asset_content(update: Update, context: ContextTypes.DEFAULT_TYPE)
     
     edit_mode = context.user_data.get("edit_mode")
     
+    found = True
     async with AsyncSessionLocal() as session:
         service = ProfileService(session)
         profile = await service.get_profile(user.id)
@@ -227,9 +237,11 @@ async def save_asset_content(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         if edit_mode == "content":
              item_id = context.user_data["current_asset_id"]
+             found = False
              for item in items:
                 if item.id == item_id:
                     item.content = content
+                    found = True
                     break
         else:
             # Creating new
@@ -239,34 +251,19 @@ async def save_asset_content(update: Update, context: ContextTypes.DEFAULT_TYPE)
             # Set ID for context so we can view it
             context.user_data["current_asset_id"] = new_item.id
 
-        # Explicitly serialize list items to dicts to avoid SQLAlchemy/JSON serialization issues
-        # although profile_service handles full profile dumps, individual field updates might bypass it if not careful.
-        # But wait, update_profile_field does full re-serialization. 
-        # The issue might be that `items` here contains mixed ContentItem objects and dicts if not fully parsed?
-        # profile.get_profile converts dicts to UserProfile (and thus ContentItems).
-        # So `items` is a list of ContentItem objects.
-        # The error is 'Object of type ContentItem is not JSON serializable'.
-        # This happens inside SQLAlchemy's execution context.
-        # My previous fix in profile_service SHOULD have fixed it by doing model_dump(mode='json').
+        if found:
+            serialized_items = [i.model_dump(mode='json') for i in items]
+            await service.update_profile_field(user.id, config["field"], serialized_items)
         
-        # However, if update_profile_field does this:
-        # current_data[field] = value  <-- value here is passed as list of ContentItem objects
-        # profile = UserProfile(**current_data) <-- Validates fine
-        # serialized_data = profile.model_dump(mode='json') <-- This SHOULD produce dicts.
-        
-        # Why did it fail? "Object of type ContentItem is not JSON serializable"
-        # Maybe I missed one path or the previous edit didn't apply correctly?
-        # Re-applying the fix in profile_service.py verified it WAS applied.
-        
-        # Let's double check if we are passing standard list of dicts here just in case.
-        serialized_items = [i.model_dump(mode='json') for i in items]
-        await service.update_profile_field(user.id, config["field"], serialized_items)
-        
-    await update.message.reply_text("✅ Сохранено!")
-    
-    if edit_mode:
-        return await show_asset_detail_message(update, context)
+    if found:
+        await update.message.reply_text("✅ Сохранено!")
+        if edit_mode:
+            return await show_asset_detail_message(update, context)
+        else:
+            # If new item, show detail too, so they can see what they added
+            return await show_asset_detail_message(update, context)
     else:
+        await update.message.reply_text("❌ Элемент не найден.")
         return await show_asset_list(update, context)
 
 async def delete_asset(update: Update, context: ContextTypes.DEFAULT_TYPE):
