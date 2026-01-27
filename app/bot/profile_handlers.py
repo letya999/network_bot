@@ -4,6 +4,11 @@ from app.db.session import AsyncSessionLocal
 from app.services.profile_service import ProfileService
 from app.services.card_service import CardService
 
+from app.bot.handlers.assets_handler import (
+    show_asset_list, ASSET_MENU, ASSET_CONFIG, 
+    ASSET_INPUT_NAME, ASSET_INPUT_CONTENT
+)
+
 # States
 SELECT_FIELD, INPUT_VALUE = range(2)
 
@@ -54,8 +59,8 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✏️ Имя", callback_data="edit_full_name"), InlineKeyboardButton("📝 Био", callback_data="edit_bio")],
         [InlineKeyboardButton("💼 Работа", callback_data="edit_job"), InlineKeyboardButton("📍 Город", callback_data="edit_location")],
         [InlineKeyboardButton("⭐ Интересы", callback_data="edit_interests"), InlineKeyboardButton("📞 Телефон", callback_data="edit_phone")],
-        [InlineKeyboardButton("📧 Email", callback_data="edit_email"), InlineKeyboardButton("🚀 Питчи", callback_data="edit_pitches")],
-        [InlineKeyboardButton("📄 Ванпейджеры", callback_data="edit_one_pagers"), InlineKeyboardButton("👋 Приветствия", callback_data="edit_welcome")],
+        [InlineKeyboardButton("📧 Email", callback_data="edit_email"), InlineKeyboardButton("🚀 Питчи", callback_data="manage_pitches")],
+        [InlineKeyboardButton("📄 Ванпейджеры", callback_data="manage_one_pagers"), InlineKeyboardButton("👋 Приветствия", callback_data="manage_welcome")],
         [InlineKeyboardButton("❌ Закрыть", callback_data="close_profile")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -63,13 +68,9 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # If this comes from a callback (button click), edit the message
     if update.callback_query:
         await update.callback_query.answer()
-        # We might have come from "Save", so we are editing the previous prompt or just sending new?
-        # If we are in the same chat, editing is nicer.
         try:
             await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
         except Exception:
-            # If message content is same, telegram errors. Or if generic error.
-            # Just send new if edit fails (e.g. message too old)
             await update.effective_chat.send_message(text, reply_markup=reply_markup, parse_mode="Markdown")
     else:
         # Command /profile
@@ -86,6 +87,17 @@ async def handle_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.delete_message()
         return ConversationHandler.END
         
+    # Handle asset management transition
+    if data == "manage_pitches":
+        context.user_data["current_asset_type"] = "pitch"
+        return await show_asset_list(update, context)
+    if data == "manage_one_pagers":
+        context.user_data["current_asset_type"] = "one_pager"
+        return await show_asset_list(update, context)
+    if data == "manage_welcome":
+        context.user_data["current_asset_type"] = "greeting"
+        return await show_asset_list(update, context)
+        
     # Map callback data to field names defined in UserProfile schema (mostly)
     # or custom logic keys
     field_map = {
@@ -96,13 +108,11 @@ async def handle_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         "edit_interests": "interests",
         "edit_phone": "phone",
         "edit_email": "email",
-        "edit_pitches": "pitches",
-        "edit_one_pagers": "one_pagers",
-        "edit_welcome": "welcome_messages"
     }
     
     field = field_map.get(data)
     if not field:
+        # If it's one of the old keys but somehow passed through, ignore or handle
         return SELECT_FIELD
         
     context.user_data["edit_field"] = field
@@ -115,9 +125,6 @@ async def handle_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         "interests": "Перечислите ваши интересы через запятую:",
         "phone": "Введите номер телефона:",
         "email": "Введите email:",
-        "pitches": "Введите новый текст питча (или список через точку с запятой ';'):",
-        "one_pagers": "Введите ссылки на ванпейджеры (через ';'):",
-        "welcome_messages": "Введите варианты приветствий (через ';'):"
     }
     
     prompt_text = prompts.get(field, "Введите значение:")
@@ -150,13 +157,10 @@ async def save_profile_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
             if company:
                 await service.update_profile_field(user.id, "company", company)
             elif len(parts) == 1 and "," not in value:
-                # User might have just typed company or job. 
-                # Let's assume just job title if no comma, or we could ask better.
                 pass
-        elif field in ["interests", "pitches", "one_pagers", "welcome_messages"]:
-            # Split by comma or semicolon
-            separator = ";" if field != "interests" else ","
-            items = [i.strip() for i in value.replace(";", "," if separator == "," else ";").split(separator)]
+        elif field == "interests":
+            # Split by comma
+            items = [i.strip() for i in value.split(",")]
             items = [i for i in items if i] # Filter empty
             await service.update_profile_field(user.id, field, items)
         else:

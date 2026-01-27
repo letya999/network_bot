@@ -42,7 +42,11 @@ async def generate_card_callback(update: Update, context: ContextTypes.DEFAULT_T
             # Offer pitch selection
             keyboard = []
             for idx, pitch in enumerate(my_profile.pitches[:5]):  # Max 5 pitches
-                preview = pitch[:30] + "..." if len(pitch) > 30 else pitch
+                pitch_item = my_profile.pitches[idx]
+                pitch_text = pitch_item.content if hasattr(pitch_item, "content") else pitch_item
+                pitch_name = pitch_item.name if hasattr(pitch_item, "name") else pitch_text[:30]
+                preview = pitch_name[:30] + "..." if len(pitch_name) > 30 else pitch_name
+                
                 keyboard.append([
                     InlineKeyboardButton(
                         f"🎯 {preview}", 
@@ -61,7 +65,11 @@ async def generate_card_callback(update: Update, context: ContextTypes.DEFAULT_T
             return
         
         # Generate card without pitch selection (no pitches or only one)
-        selected_pitch = my_profile.pitches[0] if my_profile.pitches else None
+        selected_pitch = None
+        if my_profile.pitches:
+            pitch_item = my_profile.pitches[0]
+            selected_pitch = pitch_item.content if hasattr(pitch_item, "content") else pitch_item
+            
         await _generate_and_send_card(query.message, user.id, target_contact, my_profile, selected_pitch)
 
 
@@ -101,7 +109,8 @@ async def card_pitch_selection_callback(update: Update, context: ContextTypes.DE
             try:
                 pitch_idx = int(pitch_selection)
                 if 0 <= pitch_idx < len(my_profile.pitches):
-                    selected_pitch = my_profile.pitches[pitch_idx]
+                    pitch_item = my_profile.pitches[pitch_idx]
+                    selected_pitch = pitch_item.content if hasattr(pitch_item, "content") else pitch_item
             except ValueError:
                 pass
         

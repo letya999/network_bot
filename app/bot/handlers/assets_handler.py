@@ -1,0 +1,326 @@
+import uuid
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, CallbackQueryHandler, MessageHandler, filters
+from app.db.session import AsyncSessionLocal
+from app.services.profile_service import ProfileService
+from app.schemas.profile import ContentItem
+
+# States for conversation
+ASSET_MENU = "ASSET_MENU"
+ASSET_INPUT_NAME = "ASSET_INPUT_NAME"
+ASSET_INPUT_CONTENT = "ASSET_INPUT_CONTENT"
+
+# Configuration for different asset types
+ASSET_CONFIG = {
+    "pitch": {
+        "field": "pitches",
+        "label": "Питч",
+        "plural": "Питчи",
+        "emoji": "🚀",
+        "command": "pitches"
+    },
+    "one_pager": {
+        "field": "one_pagers",
+        "label": "Ванпейджер",
+        "plural": "Ванпейджеры",
+        "emoji": "📄",
+        "command": "onepagers"
+    },
+    "greeting": {
+        "field": "welcome_messages",
+        "label": "Приветствие",
+        "plural": "Приветствия",
+        "emoji": "👋",
+        "command": "greetings"
+    }
+}
+
+async def start_assets(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Entry point for asset commands"""
+    command = update.message.text.replace("/", "").split("@")[0]
+    
+    # Determine type based on command
+    asset_type = None
+    for k, v in ASSET_CONFIG.items():
+        if v["command"] == command:
+            asset_type = k
+            break
+            
+    if not asset_type:
+        await update.message.reply_text("❌ Неизвестная команда.")
+        return ConversationHandler.END
+        
+    context.user_data["current_asset_type"] = asset_type
+    return await show_asset_list(update, context)
+
+async def show_asset_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    asset_type = context.user_data.get("current_asset_type")
+    if not asset_type:
+        return ConversationHandler.END
+        
+    config = ASSET_CONFIG[asset_type]
+    user = update.effective_user
+    
+    async with AsyncSessionLocal() as session:
+        service = ProfileService(session)
+        profile = await service.get_profile(user.id)
+        
+    items = getattr(profile, config["field"], [])
+    
+    text = f"{config['emoji']} *Ваши {config['plural']}*\n\n"
+    if not items:
+        text += "Список пуст. Добавьте первый!"
+    else:
+        text += "Выберите элемент для просмотра или редактирования:"
+        
+    keyboard = []
+    for item in items:
+        # Compatibility with strings if migration failed or legacy data
+        name = item.name if hasattr(item, "name") else (item[:20] + "...")
+        item_id = item.id if hasattr(item, "id") else "legacy"
+        
+        keyboard.append([InlineKeyboardButton(f"{name}", callback_data=f"asset_view_{item_id}")])
+        
+    keyboard.append([InlineKeyboardButton(f"➕ Добавить {config['label']}", callback_data="asset_add")])
+    keyboard.append([InlineKeyboardButton("🔙 В меню", callback_data="asset_exit")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        
+    return ASSET_MENU
+
+async def asset_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    
+    if data == "asset_exit":
+        await query.delete_message()
+        return ConversationHandler.END
+        
+    if data == "asset_add":
+        config = ASSET_CONFIG[context.user_data["current_asset_type"]]
+        await query.edit_message_text(
+            f"Введите *название* для нового {config['label']} (для кнопок):\n\n_Нажмите /cancel для отмены_",
+            parse_mode="Markdown"
+        )
+        return ASSET_INPUT_NAME
+        
+    if data.startswith("asset_view_"):
+        item_id = data.replace("asset_view_", "")
+        context.user_data["current_asset_id"] = item_id
+        return await show_asset_detail(update, context)
+        
+    return ASSET_MENU
+
+async def show_asset_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    asset_type = context.user_data.get("current_asset_type")
+    item_id = context.user_data.get("current_asset_id")
+    config = ASSET_CONFIG[asset_type]
+    
+    user = update.effective_user
+    async with AsyncSessionLocal() as session:
+        service = ProfileService(session)
+        profile = await service.get_profile(user.id)
+    
+    items = getattr(profile, config["field"], [])
+    # Find item
+    target_item = next((i for i in items if hasattr(i, "id") and i.id == item_id), None)
+    
+    if not target_item:
+        await update.callback_query.edit_message_text("❌ Элемент не найден.")
+        return await show_asset_list(update, context)
+        
+    text = f"{config['emoji']} *{target_item.name}*\n\n"
+    text += f"{target_item.content}"
+    
+    keyboard = [
+        [InlineKeyboardButton("✏️ Изм. Название", callback_data="asset_edit_name"),
+         InlineKeyboardButton("📝 Изм. Текст", callback_data="asset_edit_content")],
+        [InlineKeyboardButton("❌ Удалить", callback_data="asset_delete")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="asset_back")]
+    ]
+    
+    await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    return ASSET_MENU
+
+async def asset_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle actions inside detail view"""
+    query = update.callback_query
+    await query.answer()
+    data = query.data
+    
+    if data == "asset_back":
+        return await show_asset_list(update, context)
+        
+    if data == "asset_delete":
+        # Delete confirm? maybe just delete for speed
+        return await delete_asset(update, context)
+        
+    if data == "asset_edit_name":
+        await query.edit_message_text("Введите новое *название*:", parse_mode="Markdown")
+        context.user_data["edit_mode"] = "name"
+        return ASSET_INPUT_NAME
+        
+    if data == "asset_edit_content":
+        await query.edit_message_text("Введите новый *текст/ссылку*:", parse_mode="Markdown")
+        context.user_data["edit_mode"] = "content"
+        return ASSET_INPUT_CONTENT
+        
+    return ASSET_MENU
+
+async def save_asset_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    name = update.message.text
+    user = update.effective_user
+    asset_type = context.user_data["current_asset_type"]
+    config = ASSET_CONFIG[asset_type]
+    
+    # Check if we are adding new or editing existing
+    edit_mode = context.user_data.get("edit_mode")
+    
+    if edit_mode == "name":
+        # Editing existing name
+        item_id = context.user_data["current_asset_id"]
+        async with AsyncSessionLocal() as session:
+            service = ProfileService(session)
+            profile = await service.get_profile(user.id)
+            items = getattr(profile, config["field"], [])
+            
+            for item in items:
+                if item.id == item_id:
+                    item.name = name
+                    break
+            
+            serialized_items = [i.model_dump(mode='json') for i in items]
+            await service.update_profile_field(user.id, config["field"], serialized_items)
+            
+        await update.message.reply_text("✅ Название обновлено!")
+        # Fake update for callback logic if needed or just show detail
+        # Cannot easily jump back to message edit from here without sending new message
+        # Let's send new message with detail
+        return await show_asset_detail_message(update, context)
+    else:
+        # Adding new -> First step is name, next is content
+        context.user_data["new_asset_name"] = name
+        await update.message.reply_text(
+            f"Отлично. Теперь пришлите *текст* или ссылку для \"{name}\":",
+            parse_mode="Markdown"
+        )
+        return ASSET_INPUT_CONTENT
+
+async def save_asset_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    content = update.message.text # Handle text only for now. TODO: files
+    user = update.effective_user
+    asset_type = context.user_data["current_asset_type"]
+    config = ASSET_CONFIG[asset_type]
+    
+    edit_mode = context.user_data.get("edit_mode")
+    
+    async with AsyncSessionLocal() as session:
+        service = ProfileService(session)
+        profile = await service.get_profile(user.id)
+        items = getattr(profile, config["field"], [])
+        
+        if edit_mode == "content":
+             item_id = context.user_data["current_asset_id"]
+             for item in items:
+                if item.id == item_id:
+                    item.content = content
+                    break
+        else:
+            # Creating new
+            name = context.user_data.get("new_asset_name", "Новый элемент")
+            new_item = ContentItem(name=name, content=content, type="text")
+            items.append(new_item)
+            # Set ID for context so we can view it
+            context.user_data["current_asset_id"] = new_item.id
+
+        # Explicitly serialize list items to dicts to avoid SQLAlchemy/JSON serialization issues
+        # although profile_service handles full profile dumps, individual field updates might bypass it if not careful.
+        # But wait, update_profile_field does full re-serialization. 
+        # The issue might be that `items` here contains mixed ContentItem objects and dicts if not fully parsed?
+        # profile.get_profile converts dicts to UserProfile (and thus ContentItems).
+        # So `items` is a list of ContentItem objects.
+        # The error is 'Object of type ContentItem is not JSON serializable'.
+        # This happens inside SQLAlchemy's execution context.
+        # My previous fix in profile_service SHOULD have fixed it by doing model_dump(mode='json').
+        
+        # However, if update_profile_field does this:
+        # current_data[field] = value  <-- value here is passed as list of ContentItem objects
+        # profile = UserProfile(**current_data) <-- Validates fine
+        # serialized_data = profile.model_dump(mode='json') <-- This SHOULD produce dicts.
+        
+        # Why did it fail? "Object of type ContentItem is not JSON serializable"
+        # Maybe I missed one path or the previous edit didn't apply correctly?
+        # Re-applying the fix in profile_service.py verified it WAS applied.
+        
+        # Let's double check if we are passing standard list of dicts here just in case.
+        serialized_items = [i.model_dump(mode='json') for i in items]
+        await service.update_profile_field(user.id, config["field"], serialized_items)
+        
+    await update.message.reply_text("✅ Сохранено!")
+    
+    if edit_mode:
+        return await show_asset_detail_message(update, context)
+    else:
+        return await show_asset_list(update, context)
+
+async def delete_asset(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    item_id = context.user_data.get("current_asset_id")
+    asset_type = context.user_data.get("current_asset_type")
+    config = ASSET_CONFIG[asset_type]
+    user = update.effective_user
+    
+    async with AsyncSessionLocal() as session:
+        service = ProfileService(session)
+        profile = await service.get_profile(user.id)
+        items = getattr(profile, config["field"], [])
+        
+        # Filter out
+        items = [i for i in items if i.id != item_id]
+        
+        serialized_items = [i.model_dump(mode='json') for i in items]
+        await service.update_profile_field(user.id, config["field"], serialized_items)
+        
+    await update.callback_query.answer("🗑 Удалено")
+    return await show_asset_list(update, context)
+
+async def show_asset_detail_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Same as show_asset_detail but replies with new message (used after text input)
+    asset_type = context.user_data.get("current_asset_type")
+    item_id = context.user_data.get("current_asset_id")
+    config = ASSET_CONFIG[asset_type]
+    
+    user = update.effective_user
+    async with AsyncSessionLocal() as session:
+        service = ProfileService(session)
+        profile = await service.get_profile(user.id)
+    
+    items = getattr(profile, config["field"], [])
+    target_item = next((i for i in items if i.id == item_id), None)
+    
+    if not target_item:
+        await update.message.reply_text("❌ Элемент не найден.")
+        return await show_asset_list(update, context) # This sends new message
+        
+    text = f"{config['emoji']} *{target_item.name}*\n\n"
+    text += f"{target_item.content}"
+    
+    keyboard = [
+        [InlineKeyboardButton("✏️ Изм. Название", callback_data="asset_edit_name"),
+         InlineKeyboardButton("📝 Изм. Текст", callback_data="asset_edit_content")],
+        [InlineKeyboardButton("❌ Удалить", callback_data="asset_delete")],
+        [InlineKeyboardButton("🔙 Назад", callback_data="asset_back")]
+    ]
+    
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    return ASSET_MENU
+
+async def cancel_asset_op(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚫 Отменено")
+    return ConversationHandler.END
+

@@ -12,6 +12,12 @@ from app.bot.profile_handlers import (
     show_profile, handle_edit_callback, save_profile_value, cancel_edit, 
     SELECT_FIELD, INPUT_VALUE, send_card, share_card
 )
+from app.bot.handlers.assets_handler import (
+    start_assets, asset_menu_callback, asset_action_callback,
+    save_asset_name, save_asset_content, cancel_asset_op,
+    ASSET_MENU, ASSET_INPUT_NAME, ASSET_INPUT_CONTENT
+)
+
 from app.bot.reminder_handlers import list_reminders, reminder_action_callback
 from app.bot.analytics_handlers import show_stats
 from app.bot.match_handlers import find_matches_command, semantic_search_handler, semantic_search_callback
@@ -47,6 +53,10 @@ async def post_init(application):
         BotCommand("matches", "Найти синергии"),
         BotCommand("event", "Режим мероприятия (Context Mode)"),
         BotCommand("sync", "Синхронизация (Notion/Sheets)"),
+        # Asset commands
+        BotCommand("pitches", "Управление питчами"),
+        BotCommand("onepagers", "Управление ванпейджерами"),
+        BotCommand("greetings", "Управление приветствиями"),
     ]
     await bot.set_my_commands(commands)
     logger.info(f"Bot commands set: {commands}")
@@ -122,12 +132,31 @@ def create_bot():
     app.add_handler(prompt_conv)
 
     profile_conv = ConversationHandler(
-        entry_points=[CommandHandler("profile", show_profile)],
+        entry_points=[
+            CommandHandler("profile", show_profile),
+            CommandHandler("pitches", start_assets),
+            CommandHandler("onepagers", start_assets),
+            CommandHandler("greetings", start_assets)
+        ],
         states={
             SELECT_FIELD: [CallbackQueryHandler(handle_edit_callback)],
-            INPUT_VALUE: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_profile_value)]
+            INPUT_VALUE: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_profile_value)],
+            # Asset states
+            ASSET_MENU: [
+                CallbackQueryHandler(asset_menu_callback, pattern="^(asset_add|asset_view_.*|asset_exit)$"),
+                CallbackQueryHandler(asset_action_callback, pattern="^(asset_back|asset_delete|asset_edit_name|asset_edit_content)$")
+            ],
+            ASSET_INPUT_NAME: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_asset_name)],
+            ASSET_INPUT_CONTENT: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_asset_content)]
         },
-        fallbacks=[CommandHandler("cancel", cancel_edit)]
+        fallbacks=[
+            CommandHandler("cancel", cancel_edit),
+            # Support switching commands
+            CommandHandler("pitches", start_assets),
+            CommandHandler("onepagers", start_assets),
+            CommandHandler("greetings", start_assets),
+            CommandHandler("profile", show_profile)
+        ]
     )
     app.add_handler(profile_conv)
     

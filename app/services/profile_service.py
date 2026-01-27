@@ -27,10 +27,11 @@ class ProfileService:
         if field == "full_name":
             user.name = value
             
-        user.profile_data = current_data
-        
-        # Verify it validates
+        # Verify it validates and ensure serialization of nested models
         profile = UserProfile(**current_data)
+        serialized_data = profile.model_dump(mode='json')
+            
+        user.profile_data = serialized_data
         
         await self.session.commit()
         await self.session.refresh(user)
@@ -38,7 +39,7 @@ class ProfileService:
 
     async def update_full_profile(self, telegram_id: int, profile: UserProfile) -> UserProfile:
         user = await self.user_service.get_or_create_user(telegram_id)
-        data = profile.dict()
+        data = profile.model_dump(mode='json')
         user.profile_data = data
         if profile.full_name:
             user.name = profile.full_name

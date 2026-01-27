@@ -30,10 +30,28 @@ class CardService:
             lines.append(f"_{profile.bio}_")
             lines.append("")
         
-        # Add pitch if provided
         if pitch:
             lines.append(f"🚀 *Питч*: {pitch}")
             lines.append("")
+
+        # Add One-Pagers
+        if profile.one_pagers:
+            op_lines = []
+            for op in profile.one_pagers:
+                # Handle both object and legacy string
+                content = op.content if hasattr(op, "content") else op
+                name = op.name if hasattr(op, "name") else "Ванпейджер"
+                
+                # If content is a URL, format nicely
+                if content.startswith("http"):
+                    op_lines.append(f"• [{name}]({content})")
+                else:
+                    op_lines.append(f"• {name}: {content}")
+            
+            if op_lines:
+                lines.append(f"📄 *Материалы*:")
+                lines.extend(op_lines)
+                lines.append("")
 
         if profile.interests:
             lines.append(f"⭐ *Интересы*: {', '.join(profile.interests)}")
