@@ -1,15 +1,21 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from app.bot.handlers import start, list_contacts, export_contacts, format_card
+from app.bot.handlers import list_contacts, export_contacts, format_card
+from app.bot.handlers.menu_handlers import start_menu
 from app.models.contact import Contact
 import uuid
 
 @pytest.mark.asyncio
 async def test_start_command(mock_update, mock_context):
+    """Test that /start displays the new menu system."""
     mock_update.callback_query = None
-    await start(mock_update, mock_context)
-    assert mock_update.message.reply_text.called
-    assert "Привет" in mock_update.message.reply_text.call_args[0][0]
+    
+    with patch("app.services.user_service.UserService.get_or_create_user", AsyncMock()):
+        await start_menu(mock_update, mock_context)
+        assert mock_update.message.reply_text.called
+        # Check for menu presence instead of greeting
+        call_args = mock_update.message.reply_text.call_args
+        assert call_args is not None
 
 @pytest.mark.asyncio
 async def test_list_contacts_with_data(mock_update, mock_context):

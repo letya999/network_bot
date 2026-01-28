@@ -104,8 +104,8 @@ class TestOSINTServiceEnrichment:
         mock_result.scalar_one_or_none.return_value = mock_contact
         mock_session.execute.return_value = mock_result
 
-        # Mock search methods to return empty
-        monkeypatch.setattr("app.services.osint_service.settings.TAVILY_API_KEY", None)
+        # Mock search methods to return empty - set directly on service since value is copied at init
+        osint_service.tavily_api_key = None
 
         result = await osint_service.enrich_contact(mock_contact.id, force=True)
 
@@ -119,8 +119,8 @@ class TestOSINTServiceEnrichment:
         mock_result.scalar_one_or_none.return_value = mock_contact
         mock_session.execute.return_value = mock_result
 
-        # Mock API as not configured (will return empty results)
-        monkeypatch.setattr("app.services.osint_service.settings.TAVILY_API_KEY", None)
+        # Mock API as not configured (will return empty results) - set directly on service
+        osint_service.tavily_api_key = None
 
         result = await osint_service.enrich_contact(mock_contact.id)
 
@@ -269,9 +269,10 @@ class TestTavilySearch:
     """Test Tavily Search integration."""
 
     @pytest.mark.asyncio
-    async def test_tavily_search_not_configured(self, osint_service, monkeypatch):
+    async def test_tavily_search_not_configured(self, osint_service):
         """Should return empty when not configured."""
-        monkeypatch.setattr("app.services.osint_service.settings.TAVILY_API_KEY", None)
+        # Set directly on service since value is copied at init
+        osint_service.tavily_api_key = None
 
         results = await osint_service._tavily_search("test query")
 

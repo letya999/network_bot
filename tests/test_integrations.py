@@ -113,7 +113,7 @@ async def test_sheets_sync_contacts_success():
         result = await service.sync_contacts([contact])
         
         assert result["created"] == 1
-        mock_ws.append_row.assert_called()
+        mock_ws.append_rows.assert_called()
 
 # -----------------------------------------------------------------------------
 # Bot Handler Tests (Integration Handlers)
@@ -124,6 +124,12 @@ async def test_sync_command_notion(mock_update, mock_context):
     mock_context.args = ["notion"]
     mock_user = MagicMock(id=123, username="test")
     mock_update.effective_user = mock_user
+    
+    # Setup message mocks with AsyncMock for reply_text and edit_text
+    status_msg_mock = MagicMock()
+    status_msg_mock.edit_text = AsyncMock()
+    mock_update.message.reply_text = AsyncMock(return_value=status_msg_mock)
+    mock_update.effective_message = mock_update.message
     
     # Mock mocks
     with patch("app.bot.integration_handlers.AsyncSessionLocal"), \
@@ -140,15 +146,17 @@ async def test_sync_command_notion(mock_update, mock_context):
         # Ensure return value is iterable
         mock_contact_svc.get_all_contacts = AsyncMock(return_value=[MagicMock()])
         
-        # Fix: ensure user service returns user
-        MockUserSvc.return_value.get_or_create_user = AsyncMock()
+        # Fix: ensure user service returns user with settings
+        mock_db_user = MagicMock()
+        mock_db_user.id = 1
+        mock_db_user.settings = {}
+        MockUserSvc.return_value.get_or_create_user = AsyncMock(return_value=mock_db_user)
 
         await sync_command(mock_update, mock_context)
         
         # Verify success message
-        assert mock_update.message.reply_text.called
+        mock_update.message.reply_text.assert_called()
         # Check that edit_text was called on the return value of reply_text (the status message)
-        status_msg_mock = mock_update.message.reply_text.return_value
         status_msg_mock.edit_text.assert_called()
         args = status_msg_mock.edit_text.call_args[0][0]
         assert "Синхронизация завершена" in args

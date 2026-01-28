@@ -37,20 +37,26 @@ ASSET_CONFIG = {
 
 async def start_assets(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Entry point for asset commands"""
-    command = update.message.text.replace("/", "").split("@")[0]
-    
-    # Determine type based on command
-    asset_type = None
-    for k, v in ASSET_CONFIG.items():
-        if v["command"] == command:
-            asset_type = k
-            break
+    # Try to determine type from command if it's a message
+    if update.message and update.message.text:
+        command = update.message.text.replace("/", "").split("@")[0]
+        
+        # Determine type based on command
+        asset_type = None
+        for k, v in ASSET_CONFIG.items():
+            if v["command"] == command:
+                asset_type = k
+                break
+        
+        if asset_type:
+            context.user_data["current_asset_type"] = asset_type
             
-    if not asset_type:
-        await update.message.reply_text("❌ Неизвестная команда.")
+    # If no type determined (and not set previously by wrapper), error
+    if not context.user_data.get("current_asset_type"):
+        if update.message:
+            await update.message.reply_text("❌ Неизвестная команда.")
         return ConversationHandler.END
         
-    context.user_data["current_asset_type"] = asset_type
     return await show_asset_list(update, context)
 
 async def show_asset_list(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -46,17 +46,24 @@ async def test_triangulation_notification_on_voice_contact(mock_update, mock_con
     mock_file_content = b'OggS' + b'\x00' * 100
     
     with patch("app.bot.handlers.contact.rate_limit_middleware", AsyncMock(return_value=True)), \
-         patch("app.services.user_service.UserService.get_or_create_user", AsyncMock(return_value=db_user)), \
-         patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value={"name": "Alice Johnson", "company": "TechCorp"})), \
-         patch("app.services.merge_service.ContactMergeService.process_contact_data", AsyncMock(return_value=(new_contact, False))), \
-         patch("app.services.merge_service.ContactMergeService.is_reminder_only", return_value=False), \
-         patch("app.bot.match_handlers.notify_match_if_any", AsyncMock()), \
-         patch("app.services.pulse_service.PulseService.detect_company_triangulation", AsyncMock(return_value=[existing_contact])), \
+         patch("app.bot.handlers.contact.UserService") as MockUserSvc, \
+         patch("app.bot.handlers.contact.GeminiService") as MockGemini, \
+         patch("app.bot.handlers.contact.ContactMergeService") as MockMerge, \
+         patch("app.bot.handlers.contact.notify_match_if_any", AsyncMock()), \
+         patch("app.bot.handlers.contact.PulseService") as MockPulse, \
          patch("builtins.open", MagicMock(return_value=MagicMock(__enter__=MagicMock(return_value=MagicMock(read=MagicMock(return_value=mock_file_content)))))), \
          patch("os.path.exists", return_value=True), \
          patch("os.remove"), \
          patch("os.rmdir"), \
          patch("tempfile.mkdtemp", return_value="/tmp/test"):
+        
+        # Configure mocks
+        MockUserSvc.return_value.get_or_create_user = AsyncMock(return_value=db_user)
+        MockGemini.return_value.extract_contact_data = AsyncMock(return_value={"name": "Alice Johnson", "company": "TechCorp"})
+        MockMerge.return_value.process_contact_data = AsyncMock(return_value=(new_contact, False))
+        MockMerge.return_value.is_reminder_only = MagicMock(return_value=False)
+        MockPulse.return_value.detect_company_triangulation = AsyncMock(return_value=[existing_contact])
+        MockPulse.return_value.generate_triangulation_message = MagicMock(return_value="🔺 *Триангуляция обнаружена!*\n\nAlice Johnson работает в TechCorp\n\nДругие контакты:\n• Bob Smith")
         
         await handle_voice(mock_update, mock_context)
         

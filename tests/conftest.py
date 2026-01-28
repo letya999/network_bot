@@ -45,12 +45,16 @@ def mock_async_session_local(mock_session, monkeypatch):
         "app.bot.handlers.contact.AsyncSessionLocal",
         "app.bot.handlers.prompt.AsyncSessionLocal",
         "app.bot.handlers.search.AsyncSessionLocal",
+        "app.bot.handlers.menu_handlers.AsyncSessionLocal",
+        "app.bot.handlers.contact_detail_handlers.AsyncSessionLocal",
+        "app.bot.handlers.credentials_handlers.AsyncSessionLocal",
         "app.bot.profile_handlers.AsyncSessionLocal",
         "app.bot.reminder_handlers.AsyncSessionLocal",
         "app.bot.analytics_handlers.AsyncSessionLocal",
         "app.bot.match_handlers.AsyncSessionLocal",
         "app.bot.osint_handlers.AsyncSessionLocal",
         "app.bot.integration_handlers.AsyncSessionLocal",
+        "app.core.scheduler.AsyncSessionLocal",
     ]
     for target in targets:
         try:

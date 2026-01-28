@@ -1,8 +1,76 @@
 
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup # Added imports
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import ContextTypes
+from app.db.session import AsyncSessionLocal
+from app.services.user_service import UserService
+from app.services.contact_service import ContactService
+from app.services.notion_service import NotionService
+from app.services.sheets_service import SheetsService
 
-# ... (omitted)
+logger = logging.getLogger(__name__)
+
+
+async def sync_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /sync command - shows service selection or directly syncs if service is specified.
+    Can be called via command or callback query.
+    """
+    # Handle callback query
+    if update.callback_query:
+        await update.callback_query.answer()
+        message = update.callback_query.message
+        edit_mode = True
+    else:
+        message = update.message
+        edit_mode = False
+    
+    # Check if service is specified in args or callback data
+    service = None
+    if context.args and len(context.args) > 0:
+        service = context.args[0].lower()
+    elif update.callback_query and update.callback_query.data:
+        # Extract service from callback data if present
+        data = update.callback_query.data
+        if data.startswith("sync_"):
+            service = data.replace("sync_", "")
+    
+    # If no service specified, show selection menu
+    if not service or service not in ["notion", "sheets"]:
+        keyboard = [
+            [InlineKeyboardButton("📝 Notion", callback_data="sync_run_notion")],
+            [InlineKeyboardButton("📊 Google Sheets", callback_data="sync_run_sheets")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        text = "🔄 *Синхронизация контактов*\n\nВыберите сервис для синхронизации:"
+        
+        if edit_mode:
+            await message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        else:
+            await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        return
+    
+    # Direct sync based on service
+    if service == "notion":
+        await sync_notion(update, context)
+    elif service == "sheets":
+        await sync_sheets(update, context)
+
+
+async def sync_run_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handle sync_run_notion and sync_run_sheets callbacks.
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data
+    
+    if data == "sync_run_notion":
+        await sync_notion(update, context)
+    elif data == "sync_run_sheets":
+        await sync_sheets(update, context)
 
 async def sync_notion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user

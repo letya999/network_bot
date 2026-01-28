@@ -1,5 +1,6 @@
 import logging
 from telegram import Update, BotCommand
+from telegram.request import HTTPXRequest
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes, TypeHandler, ConversationHandler, CallbackQueryHandler
 from app.core.config import settings
 from app.core.scheduler import start_scheduler, shutdown_scheduler
@@ -156,7 +157,14 @@ def create_bot():
        logger.error("No TELEGRAM_BOT_TOKEN found. Bot will not start.")
        return None
        
-    app = ApplicationBuilder().token(settings.TELEGRAM_BOT_TOKEN).post_init(post_init).post_shutdown(post_shutdown).build()
+    request = HTTPXRequest(
+        connection_pool_size=8,
+        connect_timeout=20.0,
+        read_timeout=20.0,
+        write_timeout=20.0
+    )
+
+    app = ApplicationBuilder().token(settings.TELEGRAM_BOT_TOKEN).request(request).post_init(post_init).post_shutdown(post_shutdown).build()
     
     # Log all updates
     app.add_handler(TypeHandler(Update, log_update), group=-1)

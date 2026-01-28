@@ -32,11 +32,26 @@ async def test_show_profile_with_assets(mock_update, mock_context):
 
 @pytest.mark.asyncio
 async def test_edit_assets_callbacks(mock_update, mock_context):
-    asset_callbacks = ["edit_pitches", "edit_one_pagers", "edit_welcome"]
-    for callback in asset_callbacks:
-        mock_update.callback_query.data = callback
-        await handle_edit_callback(mock_update, mock_context)
-        assert mock_context.user_data["edit_field"] in ["pitches", "one_pagers", "welcome_messages"]
+    """Test that asset callbacks trigger the asset management flow."""
+    from app.bot.handlers.assets_handler import start_assets, ASSET_MENU
+    
+    # Mock db_user
+    mock_db_user = User(
+        telegram_id=12345,
+        name="Test User",
+        profile_data={"pitches": [], "one_pagers": [], "welcome_messages": []}
+    )
+    
+    # Setup message text to valid command so start_assets can parse it
+    mock_update.message.text = "/pitches"
+    
+    with patch("app.services.user_service.UserService.get_or_create_user", 
+               AsyncMock(return_value=mock_db_user)):
+        result = await start_assets(mock_update, mock_context)
+        
+        # Should return ASSET_MENU state and set type
+        assert result == ASSET_MENU
+        assert mock_context.user_data["current_asset_type"] == "pitch"
 
 @pytest.mark.asyncio
 async def test_edit_profile_callback(mock_update, mock_context):
@@ -45,20 +60,22 @@ async def test_edit_profile_callback(mock_update, mock_context):
     assert "полное имя" in mock_update.callback_query.edit_message_text.call_args[0][0]
 
 @pytest.mark.asyncio
-async def test_save_pitches_list(mock_update, mock_context):
-    mock_context.user_data["edit_field"] = "pitches"
-    mock_update.message.text = "Pitch 1; Pitch 2"
+async def test_save_interests_list(mock_update, mock_context):
+    """Test saving distinct list of interests."""
+    mock_context.user_data["edit_field"] = "interests"
+    mock_update.message.text = "AI, Python, Networking"
+    
     with patch("app.services.profile_service.ProfileService.update_profile_field", AsyncMock()) as mock_upd:
-        from app.schemas.profile import UserProfile
-        mock_upd.return_value = UserProfile(pitches=["Pitch 1", "Pitch 2"])
-        await save_profile_value(mock_update, mock_context)
-        
-        # Verify call arguments
-        # ProfileService.update_profile_field(user_id, field, value)
-        mock_upd.assert_called_once()
-        assert mock_upd.call_args[0][1] == "pitches"
-        assert mock_upd.call_args[0][2] == ["Pitch 1", "Pitch 2"]
-        assert_msg_contains(mock_update.message.reply_text, "Сохранено")
+        with patch("app.bot.profile_handlers.show_profile", AsyncMock()):
+            await save_profile_value(mock_update, mock_context)
+            
+            # Verify call arguments
+            # ProfileService.update_profile_field(user_id, field, value)
+            mock_upd.assert_called_once()
+            assert mock_upd.call_args[0][1] == "interests"
+            # Should be list of stripped strings
+            assert mock_upd.call_args[0][2] == ["AI", "Python", "Networking"]
+            assert_msg_contains(mock_update.message.reply_text, "Сохранено")
 
 @pytest.mark.asyncio
 async def test_generate_card_callback(mock_update, mock_context, mock_session):
