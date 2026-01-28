@@ -13,6 +13,9 @@ async def find_matches_command(update: Update, context: ContextTypes.DEFAULT_TYP
     """
     Manual trigger to find matches for the last active contact or general matches.
     """
+    if update.callback_query:
+        await update.callback_query.answer()
+
     user = update.effective_user
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
@@ -20,7 +23,7 @@ async def find_matches_command(update: Update, context: ContextTypes.DEFAULT_TYP
         
         last_contact_id = context.user_data.get("last_contact_id")
         if not last_contact_id:
-            await update.message.reply_text("Сначала выбери или добавь контакт, чтобы найти для него матчи.")
+            await update.effective_message.reply_text("Сначала выбери или добавь контакт, чтобы найти для него матчи.")
             return
 
         contact_service = ContactService(session)
@@ -28,10 +31,10 @@ async def find_matches_command(update: Update, context: ContextTypes.DEFAULT_TYP
         contact = await session.get(Contact, last_contact_id)
         
         if not contact:
-            await update.message.reply_text("Контакт не найден.")
+            await update.effective_message.reply_text("Контакт не найден.")
             return
 
-        status_msg = await update.message.reply_text(f"🔍 Ищу синергии для {contact.name}...")
+        status_msg = await update.effective_message.reply_text(f"🔍 Ищу синергии для {contact.name}...")
         
         match_service = MatchService(session)
         # 1. Match with User Profile
@@ -55,7 +58,7 @@ async def find_matches_command(update: Update, context: ContextTypes.DEFAULT_TYP
         if not response:
             response = "Явных синергий пока не найдено. Попробуй добавить больше информации о том, что человек ищет или чем может помочь."
             
-        await update.message.reply_text(response, parse_mode="Markdown")
+        await update.effective_message.reply_text(response, parse_mode="Markdown")
 
 async def semantic_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """

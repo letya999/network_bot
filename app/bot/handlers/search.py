@@ -34,14 +34,21 @@ async def list_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await message.reply_text("У тебя пока нет контактов.")
             return
 
-        text = "📋 Твои последние контакты:\n\n"
-        for i, contact in enumerate(contacts, 1):
-            text += f"{i}. {contact.name}"
-            if contact.company:
-                text += f" — {contact.company}"
-            text += "\n"
+        text = "📋 *Твои последние контакты:*\nВыберите контакт, чтобы посмотреть подробности:"
         
-        await message.reply_text(text)
+        keyboard = []
+        for contact in contacts:
+            btn_text = f"{contact.name}"
+            if contact.company:
+                btn_text += f" — {contact.company}"
+            # Limit button text length to avoid telegram errors
+            if len(btn_text) > 40:
+                btn_text = btn_text[:37] + "..."
+                
+            keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"contact_view_{contact.id}")])
+            
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
 async def find_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """

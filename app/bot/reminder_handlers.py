@@ -12,6 +12,10 @@ logger = logging.getLogger(__name__)
 
 async def list_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
         db_user = await user_service.get_or_create_user(user.id)
@@ -23,10 +27,7 @@ async def list_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         if not reminders:
-            if update.callback_query:
-                await update.callback_query.message.reply_text("Нет активных напоминаний.")
-            else:
-                await update.message.reply_text("Нет активных напоминаний.")
+            await update.effective_message.reply_text("Нет активных напоминаний.")
             return
             
         text = "🔔 *Активные напоминания:*\n\n"
@@ -41,10 +42,7 @@ async def list_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 InlineKeyboardButton(f"✅ Готово: {r.title[:15]}...", callback_data=f"rem_done_{r.id}")
             ])
             
-        if update.callback_query:
-            await update.callback_query.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
-        else:
-            await update.message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+        await update.effective_message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def reminder_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query

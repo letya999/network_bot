@@ -4,6 +4,7 @@ from telegram.ext import ContextTypes, ConversationHandler, CommandHandler, Call
 from app.db.session import AsyncSessionLocal
 from app.services.profile_service import ProfileService
 from app.schemas.profile import ContentItem
+from app.bot.handlers.menu_handlers import start_menu
 
 # States for conversation
 ASSET_MENU = "ASSET_MENU"
@@ -105,7 +106,7 @@ async def asset_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     data = query.data
     
     if data == "asset_exit":
-        await query.delete_message()
+        await start_menu(update, context)
         return ConversationHandler.END
         
     if data == "asset_add":

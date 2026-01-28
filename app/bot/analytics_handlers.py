@@ -14,6 +14,9 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     logger.info(f"User {user.id} requested stats.")
     
+    if update.callback_query:
+        await update.callback_query.answer()
+    
     # Optional: get days from args
     days = 30
     if context.args and context.args[0].isdigit():
@@ -27,7 +30,7 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stats = await analytics_service.get_networking_stats(db_user.id, days=days)
         
         if stats["total_new_contacts"] == 0:
-            await update.message.reply_text(f"За последние {days} дней новых контактов не найдено.")
+            await update.effective_message.reply_text(f"За последние {days} дней новых контактов не найдено.")
             return
 
         # Format Text Report
@@ -56,7 +59,7 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if inactive:
             text += f"\n💡 *Инсайт:* Есть {len(inactive)} контактов, с которыми ты давно не общался. /find заброшенные"
 
-        await update.message.reply_text(text, parse_mode="Markdown")
+        await update.effective_message.reply_text(text, parse_mode="Markdown")
 
         # Visualization (Pie Chart for events)
         if stats["by_event"] and len(stats["by_event"]) > 1:
@@ -72,6 +75,6 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
                  buf.seek(0)
                  plt.close()
                  
-                 await update.message.reply_photo(photo=buf)
+                 await update.effective_message.reply_photo(photo=buf)
              except Exception:
                  logger.exception("Error generating chart")
