@@ -26,7 +26,7 @@ async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Ensure user exists
     async with AsyncSessionLocal() as session:
         user_service = UserService(session)
-        await user_service.get_or_create_user(user.id, user.username, user.first_name)
+        await user_service.get_or_create_user(user.id, user.username, user.first_name, user.last_name)
 
     text = (
         f"👋 Привет, {user.first_name}!\n\n"
@@ -76,7 +76,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = "👤 **Мой профиль**\n\nУправляй своим представлением и визиткой."
         keyboard = [
             [InlineKeyboardButton("👀 Просмотр визитки", callback_data="cmd_card")],
-            [InlineKeyboardButton("✏️ Редактировать данные", callback_data="cmd_profile")],
+            [InlineKeyboardButton("✏️ Редактировать профиль", callback_data="cmd_profile")],
             [InlineKeyboardButton("🔗 Поделиться профилем", callback_data="cmd_share")],
             [InlineKeyboardButton("⬅️ Назад", callback_data=MAIN_MENU)]
         ]

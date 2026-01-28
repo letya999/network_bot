@@ -10,7 +10,7 @@ class CardService:
         
         # Name and basic info
         name = profile.full_name or "Без имени"
-        lines.append(f"📇 *{name}*")
+        lines.append(f"📇 <b>{name}</b>")
         
         info_line = []
         if profile.job_title:
@@ -27,49 +27,33 @@ class CardService:
         lines.append("") # Spacer
         
         if profile.bio:
-            lines.append(f"_{profile.bio}_")
+            lines.append(f"<i>{profile.bio}</i>")
             lines.append("")
         
         if pitch:
-            lines.append(f"🚀 *Питч*: {pitch}")
+            lines.append(f"🚀 <b>Питч</b>: {pitch}")
             lines.append("")
 
-        # Add One-Pagers
-        if profile.one_pagers:
-            op_lines = []
-            for op in profile.one_pagers:
-                # Handle both object and legacy string
-                content = op.content if hasattr(op, "content") else op
-                name = op.name if hasattr(op, "name") else "Ванпейджер"
-                
-                # If content is a URL, format nicely
-                if content.startswith("http"):
-                    op_lines.append(f"• [{name}]({content})")
-                else:
-                    op_lines.append(f"• {name}: {content}")
-            
-            if op_lines:
-                lines.append(f"📄 *Материалы*:")
-                lines.extend(op_lines)
-                lines.append("")
+        # One-Pagers removed from text card to keep it clean as per user request
+        # if profile.one_pagers: ...
 
         if profile.interests:
-            lines.append(f"⭐ *Интересы*: {', '.join(profile.interests)}")
+            lines.append(f"⭐ <b>Интересы</b>: {', '.join(profile.interests)}")
             lines.append("")
             
         # Contacts
         contacts = []
-        if profile.phone:
-            contacts.append(f"📱 {profile.phone}")
-        if profile.email:
-             contacts.append(f"📧 {profile.email}")
-        if profile.telegram:
-             contacts.append(f"✈️ {profile.telegram}")
-        if profile.website:
-             contacts.append(f"🌐 {profile.website}")
+        
+        # Add Custom Contacts (ignoring legacy phone/email fields for display)
+        if profile.custom_contacts:
+            for cc in profile.custom_contacts:
+                if cc.value.startswith("http") or cc.value.startswith("t.me"):
+                     contacts.append(f"• <a href=\"{cc.value}\">{cc.label}</a>")
+                else:
+                     contacts.append(f"• {cc.label}: {cc.value}")
              
         if contacts:
-            lines.append("📞 *Контакты*:")
+            lines.append("📞 <b>Контакты</b>:")
             lines.extend(contacts)
             
         return "\n".join(lines)

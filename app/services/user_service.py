@@ -7,16 +7,20 @@ class UserService:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_or_create_user(self, telegram_id: int, username: str = None, first_name: str = None) -> User:
+    async def get_or_create_user(self, telegram_id: int, username: str = None, first_name: str = None, last_name: str = None) -> User:
         stmt = select(User).where(User.telegram_id == telegram_id)
         result = await self.session.execute(stmt)
         user = result.scalar_one_or_none()
+        
+        profile_update = {}
+        if username: profile_update["username"] = username
+        if last_name: profile_update["last_name"] = last_name
         
         if not user:
             user = User(
                 telegram_id=telegram_id,
                 name=first_name,
-                profile_data={"username": username}
+                profile_data=profile_update
             )
             self.session.add(user)
             await self.session.commit()
@@ -28,12 +32,21 @@ class UserService:
                 user.name = first_name
                 updated = True
             
-            if username:
-                current_data = dict(user.profile_data) if user.profile_data else {}
-                if current_data.get("username") != username:
-                    current_data["username"] = username
-                    user.profile_data = current_data
-                    updated = True
+            # Check profile data updates
+            current_data = dict(user.profile_data) if user.profile_data else {}
+            data_changed = False
+            
+            if username and current_data.get("username") != username:
+                current_data["username"] = username
+                data_changed = True
+                
+            if last_name and current_data.get("last_name") != last_name:
+                current_data["last_name"] = last_name
+                data_changed = True
+                
+            if data_changed:
+                user.profile_data = current_data
+                updated = True
             
             if updated:
                 await self.session.commit()

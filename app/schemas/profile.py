@@ -8,6 +8,11 @@ class SocialLink(BaseModel):
     url: str
 
 
+class CustomContact(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
+    label: str
+    value: str
+
 class ContentItem(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     name: str
@@ -22,6 +27,8 @@ class UserProfile(BaseModel):
     location: Optional[str] = None
     interests: List[str] = Field(default_factory=list)
     social_links: List[SocialLink] = Field(default_factory=list)
+    custom_contacts: List[CustomContact] = Field(default_factory=list)
+    
     # Personal assets
     pitches: List[ContentItem] = Field(default_factory=list, description="List of elevator pitches")
     one_pagers: List[ContentItem] = Field(default_factory=list, description="List of one-pagers")
@@ -37,6 +44,9 @@ class UserProfile(BaseModel):
     @classmethod
     def migrate_strings(cls, data: Any) -> Any:
         if isinstance(data, dict):
+            # Ensure lists
+            if 'custom_contacts' not in data: data['custom_contacts'] = []
+            
             for field_name in ['pitches', 'one_pagers', 'welcome_messages']:
                 if field_name in data:
                     raw_list = data[field_name]

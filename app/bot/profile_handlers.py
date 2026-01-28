@@ -3,6 +3,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from app.db.session import AsyncSessionLocal
 from app.services.profile_service import ProfileService
 from app.services.card_service import CardService
+from app.schemas.profile import CustomContact
 
 from app.bot.handlers.assets_handler import (
     show_asset_list, ASSET_MENU, ASSET_CONFIG, 
@@ -10,7 +11,7 @@ from app.bot.handlers.assets_handler import (
 )
 
 # States
-SELECT_FIELD, INPUT_VALUE = range(2)
+SELECT_FIELD, INPUT_VALUE, INPUT_CONTACT_LABEL, INPUT_CONTACT_VALUE = range(4)
 
 async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show profile and return state for conversation"""
@@ -19,10 +20,10 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         service = ProfileService(session)
         profile = await service.get_profile(user.id)
         
-    # Build text representation
-    text = f"👤 *Ваш Профиль*\n\n"
+    # Build text representation (HTML)
+    text = f"👤 <b>Ваш Профиль</b>\n\n"
     name = profile.full_name or user.first_name or "Без имени"
-    text += f"*{name}*\n"
+    text += f"<b>{name}</b>\n"
     
     if profile.job_title:
         text += f"💼 {profile.job_title}"
@@ -36,31 +37,34 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"📍 {profile.location}\n"
     
     if profile.bio:
-        text += f"\n📝 {profile.bio}\n"
+        text += f"\n<i>{profile.bio}</i>\n"
         
     if profile.interests:
-        text += f"\n⭐ *Интересы*: {', '.join(profile.interests)}\n"
+        text += f"\n⭐ <b>Интересы</b>: {', '.join(profile.interests)}\n"
         
-    phone = profile.phone or "—"
-    email = profile.email or "—"
-    text += f"\n📞 *Контакты*:\n📱 {phone}\n📧 {email}\n"
-
-    # Assets summary
-    if profile.pitches:
-        text += f"🚀 *Питчи*: {len(profile.pitches)}\n"
-    if profile.one_pagers:
-        text += f"📄 *Ванпейджеры*: {len(profile.one_pagers)}\n"
-    if profile.welcome_messages:
-        text += f"👋 *Приветствия*: {len(profile.welcome_messages)}\n"
+    # Combined Contacts section
+    text += "\n📞 <b>Контакты</b>:\n"
+    
+    has_contacts = False
+    
+    # Custom Contacts
+    if profile.custom_contacts:
+        for cc in profile.custom_contacts:
+            if cc.value.startswith("http") or cc.value.startswith("t.me"):
+                 text += f"• <a href=\"{cc.value}\">{cc.label}</a>\n"
+            else:
+                 text += f"• {cc.label}: {cc.value}\n"
+        has_contacts = True
+                 
+    if not has_contacts:
+        text += "_(пусто)_\n"
 
     # Social links could be added here
         
     keyboard = [
         [InlineKeyboardButton("✏️ Имя", callback_data="edit_full_name"), InlineKeyboardButton("📝 Био", callback_data="edit_bio")],
         [InlineKeyboardButton("💼 Работа", callback_data="edit_job"), InlineKeyboardButton("📍 Город", callback_data="edit_location")],
-        [InlineKeyboardButton("⭐ Интересы", callback_data="edit_interests"), InlineKeyboardButton("📞 Телефон", callback_data="edit_phone")],
-        [InlineKeyboardButton("📧 Email", callback_data="edit_email"), InlineKeyboardButton("🚀 Питчи", callback_data="manage_pitches")],
-        [InlineKeyboardButton("📄 Ванпейджеры", callback_data="manage_one_pagers"), InlineKeyboardButton("👋 Приветствия", callback_data="manage_welcome")],
+        [InlineKeyboardButton("⭐ Интересы", callback_data="edit_interests"), InlineKeyboardButton("🔗 Контакты (+)", callback_data="manage_custom_contacts")],
         [InlineKeyboardButton("❌ Закрыть", callback_data="close_profile")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -69,12 +73,12 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
         await update.callback_query.answer()
         try:
-            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
         except Exception:
-            await update.effective_chat.send_message(text, reply_markup=reply_markup, parse_mode="Markdown")
+            await update.effective_chat.send_message(text, reply_markup=reply_markup, parse_mode="HTML")
     else:
         # Command /profile
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
         
     return SELECT_FIELD
 
@@ -88,15 +92,23 @@ async def handle_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return ConversationHandler.END
         
     # Handle asset management transition
-    if data == "manage_pitches":
-        context.user_data["current_asset_type"] = "pitch"
-        return await show_asset_list(update, context)
-    if data == "manage_one_pagers":
-        context.user_data["current_asset_type"] = "one_pager"
-        return await show_asset_list(update, context)
-    if data == "manage_welcome":
-        context.user_data["current_asset_type"] = "greeting"
-        return await show_asset_list(update, context)
+    # Handle custom contacts
+    if data == "manage_custom_contacts":
+        return await show_custom_contacts_menu(update, context)
+    
+    if data == "add_contact":
+        await query.edit_message_text(
+            "Введите <b>название</b> для нового контакта (например: 'Мой сайт', 'LinkedIn', 'Портфолио'):\n\n<i>Нажмите /cancel для отмены</i>", 
+            parse_mode="HTML"
+        )
+        return INPUT_CONTACT_LABEL
+        
+    if data.startswith("del_contact_"):
+        cid = data.replace("del_contact_", "")
+        return await delete_custom_contact(update, context, cid)
+        
+    if data == "back_to_profile":
+        return await show_profile(update, context)
         
     # Map callback data to field names defined in UserProfile schema (mostly)
     # or custom logic keys
@@ -188,19 +200,117 @@ async def send_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
         profile = await service.get_profile(user.id)
         
     card_text = CardService.generate_text_card(profile)
-    await update.message.reply_text(card_text, parse_mode="Markdown")
+    
+    # helper to reply whether it's a message or callback
+    if update.callback_query:
+        await update.callback_query.answer()
+        # If called from button, we might want to send a NEW message, not edit
+        await update.effective_message.reply_text(card_text, parse_mode="HTML")
+    else:
+        await update.message.reply_text(card_text, parse_mode="HTML")
     
 async def share_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Generate a deep link to share the card"""
     user = update.effective_user
     bot_username = context.bot.username
     
-    # We use telegram_id for now. UUID might be safer but ID is public anyway if they message you.
-    # Format: start=c_<id> (c for card)
+    # We use telegram_id for now.
     link = f"https://t.me/{bot_username}?start=c_{user.id}"
     
-    await update.message.reply_text(
-        f"🔗 *Твоя ссылка-визитка:*\n`{link}`\n\n"
-        "Отправь её кому угодно, и они увидят твой профиль!",
-        parse_mode="Markdown"
+    text = (
+        f"🔗 <b>Твоя ссылка-визитка:</b>\n<code>{link}</code>\n\n"
+        "Отправь её кому угодно, и они увидят твой профиль!"
     )
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.effective_message.reply_text(text, parse_mode="HTML")
+    else:
+        await update.message.reply_text(text, parse_mode="HTML")
+
+async def show_custom_contacts_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    async with AsyncSessionLocal() as session:
+        service = ProfileService(session)
+        profile = await service.get_profile(user.id)
+    
+    text = "🔗 <b>Ссылки и контакты</b>\n\nСписок ваших дополнительных контактов:"
+    keyboard = []
+    
+    if profile.custom_contacts:
+        for cc in profile.custom_contacts:
+            val = cc.value[:30] + "..." if len(cc.value) > 30 else cc.value
+            text += f"\n• {cc.label}: {val}"
+            keyboard.append([InlineKeyboardButton(f"❌ {cc.label}", callback_data=f"del_contact_{cc.id}")])
+    else:
+        text += "\n_(пусто)_"
+        
+    keyboard.append([InlineKeyboardButton("➕ Добавить контакт", callback_data="add_contact")])
+    keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data="back_to_profile")])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Can be called from callback or message, usually callback from profile edit
+    if update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
+    else:
+        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
+        
+    return SELECT_FIELD
+
+async def save_contact_label(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    label = update.message.text
+    context.user_data["new_contact_label"] = label
+    
+    await update.message.reply_text(
+        f"Отлично. Теперь пришлите <b>значение</b> (ссылку или текст) для \"{label}\":\n\n<i>Например: https://linkedin.com/in/username</i>", 
+        parse_mode="HTML"
+    )
+    return INPUT_CONTACT_VALUE
+
+async def save_contact_value(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    value = update.message.text
+    label = context.user_data.get("new_contact_label", "Контакт")
+    user = update.effective_user
+    
+    async with AsyncSessionLocal() as session:
+        service = ProfileService(session)
+        profile = await service.get_profile(user.id)
+        
+        current = profile.custom_contacts or []
+        new_contact = CustomContact(label=label, value=value)
+        current.append(new_contact)
+        
+        # Serialize (ProfileService accepts dict update for custom field or we update UserProfile directly)
+        # ProfileService.update_profile_field handles serialization if we pass list of dicts.
+        # But here we have objects.
+        # Let's adjust manually.
+        serialized = [c.model_dump() for c in current]
+        await service.update_profile_field(user.id, "custom_contacts", serialized)
+        
+    await update.message.reply_text("✅ Контакт добавлен!")
+    return await show_custom_contacts_menu(update, context)
+
+async def delete_custom_contact(update: Update, context: ContextTypes.DEFAULT_TYPE, contact_id: str):
+    user = update.effective_user
+    async with AsyncSessionLocal() as session:
+        service = ProfileService(session)
+        profile = await service.get_profile(user.id)
+        
+        current = profile.custom_contacts or []
+        # Filter
+        new_list = [c for c in current if c.id != contact_id]
+        
+        if len(current) != len(new_list):
+            serialized = [c.model_dump() for c in new_list]
+            await service.update_profile_field(user.id, "custom_contacts", serialized)
+            try: 
+                 await update.callback_query.answer("🗑 Удалено") 
+            except: pass
+        else:
+             try:
+                 await update.callback_query.answer("❌ Не найдено")
+             except: pass
+             
+    # Try to return to menu (might edit message)
+    return await show_custom_contacts_menu(update, context)

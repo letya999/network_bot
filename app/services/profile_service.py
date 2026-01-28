@@ -8,11 +8,21 @@ class ProfileService:
         self.user_service = UserService(session)
 
     async def get_profile(self, telegram_id: int) -> UserProfile:
-        user = await self.user_service.get_or_create_user(telegram_id)
+        # Optimize: Try get_user first (read-only query)
+        user = await self.user_service.get_user(telegram_id)
+        
+        if not user:
+             # Fallback to create if not found
+             user = await self.user_service.get_or_create_user(telegram_id)
+             
         data = user.profile_data or {}
-        # Ensure 'full_name' defaults to user.name if not in profile_data
-        if "full_name" not in data and user.name:
-            data["full_name"] = user.name
+        # Ensure 'full_name' defaults to user.name + last_name if not in profile_data or empty
+        if not data.get("full_name"):
+            first = user.name or ""
+            last = data.get("last_name") or ""
+            full = f"{first} {last}".strip()
+            if full:
+                data["full_name"] = full
             
         return UserProfile(**data)
 

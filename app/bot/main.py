@@ -11,7 +11,8 @@ from app.bot.handlers import (
 )
 from app.bot.profile_handlers import (
     show_profile, handle_edit_callback, save_profile_value, cancel_edit, 
-    SELECT_FIELD, INPUT_VALUE, send_card, share_card
+    SELECT_FIELD, INPUT_VALUE, INPUT_CONTACT_LABEL, INPUT_CONTACT_VALUE,
+    save_contact_label, save_contact_value, send_card, share_card
 )
 from app.bot.handlers.assets_handler import (
     start_assets, asset_menu_callback, asset_action_callback,
@@ -213,6 +214,8 @@ def create_bot():
         states={
             SELECT_FIELD: [CallbackQueryHandler(handle_edit_callback)],
             INPUT_VALUE: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_profile_value)],
+            INPUT_CONTACT_LABEL: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_contact_label)],
+            INPUT_CONTACT_VALUE: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_contact_value)],
             # Asset states
             ASSET_MENU: [
                 CallbackQueryHandler(asset_menu_callback, pattern="^(asset_add|asset_view_.*|asset_exit)$"),
@@ -275,8 +278,8 @@ def create_bot():
     # --- New Menu Handlers ---
     # Menu navigation
     app.add_handler(CallbackQueryHandler(menu_callback, pattern="^menu_"))
-    # Command routing from menu
-    app.add_handler(CallbackQueryHandler(route_menu_command, pattern="^cmd_"))
+    # Command routing from menu (exclude asset commands which are handled by profile_conv)
+    app.add_handler(CallbackQueryHandler(route_menu_command, pattern="^cmd_(?!pitches|onepagers|greetings|profile)"))
     
     # Detail Handlers
     app.add_handler(CallbackQueryHandler(view_contact, pattern=f"^{CONTACT_VIEW_PREFIX}"))
