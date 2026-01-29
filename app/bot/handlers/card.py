@@ -155,9 +155,11 @@ async def _generate_and_send_card(
         card_text = CardService.generate_text_card(my_profile, intro_text=intro, pitch=selected_pitch)
         
         await status_msg.delete()
+        from html import escape
+        safe_name = escape(target_contact.name) if target_contact.name else "Неизвестно"
         await message.reply_text(
-            f"📨 *Персонализированная визитка для {target_contact.name}*:\n\n{card_text}",
-            parse_mode="Markdown"
+            f"📨 <b>Персонализированная визитка для {safe_name}</b>:\n\n{card_text}",
+            parse_mode="HTML"
         )
     except Exception:
         logger.exception("Error generating card")

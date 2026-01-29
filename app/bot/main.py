@@ -218,7 +218,7 @@ def create_bot():
             INPUT_CONTACT_VALUE: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_contact_value)],
             # Asset states
             ASSET_MENU: [
-                CallbackQueryHandler(asset_menu_callback, pattern="^(asset_add|asset_view_.*|asset_exit)$"),
+                CallbackQueryHandler(asset_menu_callback, pattern="^(asset_add|asset_view_.*|asset_exit|menu_.*)$"),
                 CallbackQueryHandler(asset_action_callback, pattern="^(asset_back|asset_delete|asset_edit_name|asset_edit_content)$")
             ],
             ASSET_INPUT_NAME: [MessageHandler(filters.TEXT & (~filters.COMMAND), save_asset_name)],
@@ -229,7 +229,9 @@ def create_bot():
             CommandHandler("pitches", start_assets),
             CommandHandler("onepagers", start_assets),
             CommandHandler("greetings", start_assets),
-            CommandHandler("profile", show_profile)
+            CommandHandler("profile", show_profile),
+            CommandHandler("start", start_menu),
+            CommandHandler("menu", start_menu)
         ]
     )
     app.add_handler(profile_conv)
@@ -254,7 +256,11 @@ def create_bot():
         states={
             WAITING_FOR_CSV: [MessageHandler(filters.Document.ALL, handle_csv_import)],
         },
-        fallbacks=[CommandHandler("cancel", cancel_import)]
+        fallbacks=[
+            CommandHandler("cancel", cancel_import),
+            CommandHandler("start", start_menu),
+            CommandHandler("menu", start_menu)
+        ]
     )
     app.add_handler(import_conv)
 
@@ -268,7 +274,11 @@ def create_bot():
             SELECT_SERVICE: [CallbackQueryHandler(service_choice_callback)],
             WAITING_INPUT: [MessageHandler(filters.TEXT & (~filters.COMMAND), handle_input)]
         },
-        fallbacks=[CommandHandler("cancel", cancel_creds)]
+        fallbacks=[
+            CommandHandler("cancel", cancel_creds),
+            CommandHandler("start", start_menu),
+            CommandHandler("menu", start_menu)
+        ]
     )
     app.add_handler(creds_conv)
 

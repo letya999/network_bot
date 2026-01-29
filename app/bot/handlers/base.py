@@ -32,8 +32,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     
                     await update.message.reply_text(
                         f"👋 Привет! Вот визитка, которой с тобой поделились:\n\n{card_text}\n\n"
-                        "_Нажми /save чтобы сохранить (WIP)_", 
-                        parse_mode="Markdown"
+                        "<i>Нажми /save чтобы сохранить (WIP)</i>", 
+                        parse_mode="HTML"
                     )
                 else:
                     await update.message.reply_text("❌ Профиль не найден или удален.")

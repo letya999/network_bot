@@ -22,7 +22,12 @@ async def test_list_contacts_with_data(mock_update, mock_context):
     c1 = Contact(id=uuid.uuid4(), name="Alice")
     with patch("app.services.contact_service.ContactService.get_recent_contacts", AsyncMock(return_value=[c1])):
         await list_contacts(mock_update, mock_context)
-        assert "Alice" in mock_update.message.reply_text.call_args[0][0]
+        
+        args, kwargs = mock_update.message.reply_text.call_args
+        reply_markup = kwargs.get("reply_markup")
+        assert reply_markup is not None
+        # Check first button text
+        assert "Alice" in reply_markup.inline_keyboard[0][0].text
 
 @pytest.mark.asyncio
 async def test_export_contacts(mock_update, mock_context):

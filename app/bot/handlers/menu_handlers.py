@@ -4,8 +4,65 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotComm
 from telegram.ext import ContextTypes, ConversationHandler
 from app.db.session import AsyncSessionLocal
 from app.services.user_service import UserService
+from app.services.profile_service import ProfileService
+from html import escape
 
 logger = logging.getLogger(__name__)
+
+async def cleanup_conversation_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Helper to delete the conversation message if it exists.
+    Stores message IDs in context.user_data['conversation_message_id']
+    
+    CRITICAL: Updates context to remove ID, but ONLY deletes message if it is NOT 
+    the current callback message. If it IS the current message, we let the next handler 
+    (e.g. start_menu) edit it instead of deleting it.
+    """
+    try:
+        msg_id = context.user_data.get('conversation_message_id')
+        current_msg_id = update.callback_query.message.message_id if update.callback_query and update.callback_query.message else None
+        
+        if msg_id:
+            # If the tracked message is DIFFERENT from the current button interaction,
+            # it means it's an old/orphaned message. Delete it.
+            if current_msg_id and msg_id == current_msg_id:
+                # We are interacting with the tracked message. Do NOT delete it.
+                # Just clear the tracker so we don't try to delete it later.
+                # The caller (menu navigation) is expected to EDIT this message.
+                pass
+            elif update.effective_chat:
+                try:
+                    await context.bot.delete_message(
+                        chat_id=update.effective_chat.id,
+                        message_id=msg_id
+                    )
+                except Exception as e:
+                    logger.debug(f"Could not delete conversation message {msg_id}: {e}")
+            
+            # Always clear the tracker
+            context.user_data.pop('conversation_message_id', None)
+            
+    except Exception as e:
+        logger.debug(f"Error in cleanup_conversation_message: {e}")
+
+async def cleanup_and_show_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, menu_type: str = None):
+    """
+    Cleanup any active conversation messages and show the specified menu.
+    If menu_type is None, shows main menu.
+    """
+    await cleanup_conversation_message(update, context)
+    
+    if menu_type:
+        # Create a fake callback query data to reuse menu_callback logic
+        if update.callback_query:
+            original_data = update.callback_query.data
+            update.callback_query._data = menu_type
+            await menu_callback(update, context)
+            update.callback_query._data = original_data
+        else:
+            await start_menu(update, context)
+    else:
+        await start_menu(update, context)
 
 # Callback prefixes
 MENU_PREFIX = "menu_"
@@ -59,11 +116,15 @@ async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Handles menu navigation.
+    Cleans up any active conversation messages before navigating.
     """
     query = update.callback_query
     data = query.data
     
     await query.answer()
+    
+    # Clean up any conversation messages when navigating menus
+    await cleanup_conversation_message(update, context)
     
     if data == MAIN_MENU:
         await start_menu(update, context)
@@ -73,13 +134,56 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = []
     
     if data == PROFILE_MENU:
-        text = "👤 **Мой профиль**\n\nУправляй своим представлением и визиткой."
+        # Show actual profile instead of generic text
+        user = update.effective_user
+        async with AsyncSessionLocal() as session:
+            service = ProfileService(session)
+            profile = await service.get_profile(user.id)
+            
+        text = f"👤 <b>Ваш Профиль</b>\n\n"
+        name = profile.full_name or user.first_name or "Без имени"
+        text += f"<b>{escape(name)}</b>\n"
+        
+        if profile.job_title:
+            text += f"💼 {escape(profile.job_title)}"
+            if profile.company:
+                text += f" @ {escape(profile.company)}"
+            text += "\n"
+        elif profile.company:
+            text += f"🏢 {escape(profile.company)}\n"
+            
+        if profile.location:
+            text += f"📍 {escape(profile.location)}\n"
+        
+        if profile.bio:
+            text += f"\n<i>{escape(profile.bio)}</i>\n"
+            
+        if profile.interests:
+            text += f"\n⭐ <b>Интересы</b>: {escape(', '.join(profile.interests))}\n"
+            
+        # Contacts
+        text += "\n📞 <b>Контакты</b>:\n"
+        has_contacts = False
+        if profile.custom_contacts:
+            for cc in profile.custom_contacts:
+                if cc.value.startswith("http") or cc.value.startswith("t.me"):
+                     text += f"• <a href=\"{escape(cc.value)}\">{escape(cc.label)}</a>\n"
+                else:
+                     text += f"• {escape(cc.label)}: {escape(cc.value)}\n"
+            has_contacts = True
+        
+        if not has_contacts:
+            text += "_(пусто)_\n"
+            
         keyboard = [
-            [InlineKeyboardButton("👀 Просмотр визитки", callback_data="cmd_card")],
             [InlineKeyboardButton("✏️ Редактировать профиль", callback_data="cmd_profile")],
             [InlineKeyboardButton("🔗 Поделиться профилем", callback_data="cmd_share")],
             [InlineKeyboardButton("⬅️ Назад", callback_data=MAIN_MENU)]
         ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode="HTML")
+        return
         
     elif data == MATERIALS_MENU:
         text = "📂 **Мои материалы**\n\nБыстрый доступ к твоим ассетам."

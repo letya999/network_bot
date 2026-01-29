@@ -50,6 +50,7 @@ def mock_async_session_local(mock_session, monkeypatch):
         "app.bot.handlers.credentials_handlers.AsyncSessionLocal",
         "app.bot.profile_handlers.AsyncSessionLocal",
         "app.bot.reminder_handlers.AsyncSessionLocal",
+        "app.bot.handlers.assets_handler.AsyncSessionLocal",
         "app.bot.analytics_handlers.AsyncSessionLocal",
         "app.bot.match_handlers.AsyncSessionLocal",
         "app.bot.osint_handlers.AsyncSessionLocal",
@@ -94,6 +95,7 @@ def mock_update():
     
     message.reply_document = AsyncMock()
     update.message = message
+    update.effective_message = message
     
     # Callback Query
     # Note: Important to link message here if callback edits it

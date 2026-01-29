@@ -89,14 +89,18 @@ async def show_asset_list(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard.append([InlineKeyboardButton(f"{name}", callback_data=f"asset_view_{item_id}")])
         
     keyboard.append([InlineKeyboardButton(f"➕ Добавить {config['label']}", callback_data="asset_add")])
-    keyboard.append([InlineKeyboardButton("🔙 В меню", callback_data="asset_exit")])
+    keyboard.append([InlineKeyboardButton("🔙 В меню", callback_data="menu_materials")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     if update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        msg = await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        if msg:
+            context.user_data['conversation_message_id'] = msg.message_id
     else:
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        msg = await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        if msg:
+            context.user_data['conversation_message_id'] = msg.message_id
         
     return ASSET_MENU
 
@@ -105,8 +109,15 @@ async def asset_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
     await query.answer()
     data = query.data
     
+    # Handle menu navigation - this will end the conversation
+    if data.startswith("menu_"):
+        from app.bot.handlers.menu_handlers import menu_callback
+        await menu_callback(update, context)
+        return ConversationHandler.END
+    
     if data == "asset_exit":
-        await start_menu(update, context)
+        from app.bot.handlers.menu_handlers import cleanup_and_show_menu
+        await cleanup_and_show_menu(update, context, "menu_materials")
         return ConversationHandler.END
         
     if data == "asset_add":
@@ -115,10 +126,12 @@ async def asset_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.user_data.pop("current_asset_id", None)
         
         config = ASSET_CONFIG[context.user_data["current_asset_type"]]
-        await query.edit_message_text(
+        msg = await query.edit_message_text(
             f"Введите *название* для нового {config['label']} (для кнопок):\n\n_Нажмите /cancel для отмены_",
             parse_mode="Markdown"
         )
+        if msg:
+            context.user_data['conversation_message_id'] = msg.message_id
         return ASSET_INPUT_NAME
         
     if data.startswith("asset_view_"):
@@ -156,7 +169,9 @@ async def show_asset_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔙 Назад", callback_data="asset_back")]
     ]
     
-    await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    msg = await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+    if msg:
+        context.user_data['conversation_message_id'] = msg.message_id
     return ASSET_MENU
 
 async def asset_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

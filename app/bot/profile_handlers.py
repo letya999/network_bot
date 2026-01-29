@@ -21,26 +21,27 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         profile = await service.get_profile(user.id)
         
     # Build text representation (HTML)
+    from html import escape
     text = f"👤 <b>Ваш Профиль</b>\n\n"
     name = profile.full_name or user.first_name or "Без имени"
-    text += f"<b>{name}</b>\n"
+    text += f"<b>{escape(name)}</b>\n"
     
     if profile.job_title:
-        text += f"💼 {profile.job_title}"
+        text += f"💼 {escape(profile.job_title)}"
         if profile.company:
-            text += f" @ {profile.company}"
+            text += f" @ {escape(profile.company)}"
         text += "\n"
     elif profile.company:
-        text += f"🏢 {profile.company}\n"
+        text += f"🏢 {escape(profile.company)}\n"
         
     if profile.location:
-        text += f"📍 {profile.location}\n"
+        text += f"📍 {escape(profile.location)}\n"
     
     if profile.bio:
-        text += f"\n<i>{profile.bio}</i>\n"
+        text += f"\n<i>{escape(profile.bio)}</i>\n"
         
     if profile.interests:
-        text += f"\n⭐ <b>Интересы</b>: {', '.join(profile.interests)}\n"
+        text += f"\n⭐ <b>Интересы</b>: {escape(', '.join(profile.interests))}\n"
         
     # Combined Contacts section
     text += "\n📞 <b>Контакты</b>:\n"
@@ -51,9 +52,9 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if profile.custom_contacts:
         for cc in profile.custom_contacts:
             if cc.value.startswith("http") or cc.value.startswith("t.me"):
-                 text += f"• <a href=\"{cc.value}\">{cc.label}</a>\n"
+                 text += f"• <a href=\"{escape(cc.value)}\">{escape(cc.label)}</a>\n"
             else:
-                 text += f"• {cc.label}: {cc.value}\n"
+                 text += f"• {escape(cc.label)}: {escape(cc.value)}\n"
         has_contacts = True
                  
     if not has_contacts:
@@ -65,7 +66,7 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("✏️ Имя", callback_data="edit_full_name"), InlineKeyboardButton("📝 Био", callback_data="edit_bio")],
         [InlineKeyboardButton("💼 Работа", callback_data="edit_job"), InlineKeyboardButton("📍 Город", callback_data="edit_location")],
         [InlineKeyboardButton("⭐ Интересы", callback_data="edit_interests"), InlineKeyboardButton("🔗 Контакты (+)", callback_data="manage_custom_contacts")],
-        [InlineKeyboardButton("❌ Закрыть", callback_data="close_profile")]
+        [InlineKeyboardButton("🔙 Назад", callback_data="menu_profile")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -73,12 +74,19 @@ async def show_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query:
         await update.callback_query.answer()
         try:
-            await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
+            msg = await update.callback_query.edit_message_text(text, reply_markup=reply_markup, parse_mode="HTML")
+            # Track this message for cleanup
+            if msg:
+                context.user_data['conversation_message_id'] = msg.message_id
         except Exception:
-            await update.effective_chat.send_message(text, reply_markup=reply_markup, parse_mode="HTML")
+            msg = await update.effective_chat.send_message(text, reply_markup=reply_markup, parse_mode="HTML")
+            if msg:
+                context.user_data['conversation_message_id'] = msg.message_id
     else:
         # Command /profile
-        await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
+        msg = await update.message.reply_text(text, reply_markup=reply_markup, parse_mode="HTML")
+        if msg:
+            context.user_data['conversation_message_id'] = msg.message_id
         
     return SELECT_FIELD
 
@@ -87,8 +95,16 @@ async def handle_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     data = query.data
     
+    # Handle menu navigation - this will end the conversation
+    if data.startswith("menu_"):
+        # Import here to avoid circular dependency
+        from app.bot.handlers.menu_handlers import menu_callback
+        await menu_callback(update, context)
+        return ConversationHandler.END
+    
     if data == "close_profile":
         await query.delete_message()
+        context.user_data.pop('conversation_message_id', None)
         return ConversationHandler.END
         
     # Handle asset management transition
@@ -97,8 +113,12 @@ async def handle_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
         return await show_custom_contacts_menu(update, context)
     
     if data == "add_contact":
-        await query.edit_message_text(
-            "Введите <b>название</b> для нового контакта (например: 'Мой сайт', 'LinkedIn', 'Портфолио'):\n\n<i>Нажмите /cancel для отмены</i>", 
+        # Remove buttons from menu but keep text visible
+        await query.edit_message_reply_markup(reply_markup=None)
+        
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Введите <b>название</b> для нового контакта (например: 'Мой сайт', 'LinkedIn', 'Портфолио'):\n\n<i>Нажмите /cancel для отмены</i>", 
             parse_mode="HTML"
         )
         return INPUT_CONTACT_LABEL
@@ -141,8 +161,13 @@ async def handle_edit_callback(update: Update, context: ContextTypes.DEFAULT_TYP
     
     prompt_text = prompts.get(field, "Введите значение:")
     
-    await query.edit_message_text(
-        f"{prompt_text}\n\n_Нажмите /cancel чтобы отменить_",
+    # Remove buttons from menu so it acts as "reference"
+    await query.edit_message_reply_markup(reply_markup=None)
+    
+    # Send new prompt message
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"{prompt_text}\n\n_Нажмите /cancel чтобы отменить_",
         parse_mode="Markdown"
     )
     return INPUT_VALUE
@@ -190,7 +215,7 @@ async def save_profile_value(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def cancel_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🚫 Редактирование отменено.")
-    return ConversationHandler.END
+    return await show_profile(update, context)
 
 async def send_card(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send the user's business card info"""
@@ -238,9 +263,10 @@ async def show_custom_contacts_menu(update: Update, context: ContextTypes.DEFAUL
     keyboard = []
     
     if profile.custom_contacts:
+        from html import escape
         for cc in profile.custom_contacts:
             val = cc.value[:30] + "..." if len(cc.value) > 30 else cc.value
-            text += f"\n• {cc.label}: {val}"
+            text += f"\n• {escape(cc.label)}: {escape(val)}"
             keyboard.append([InlineKeyboardButton(f"❌ {cc.label}", callback_data=f"del_contact_{cc.id}")])
     else:
         text += "\n_(пусто)_"
@@ -262,8 +288,9 @@ async def save_contact_label(update: Update, context: ContextTypes.DEFAULT_TYPE)
     label = update.message.text
     context.user_data["new_contact_label"] = label
     
+    from html import escape
     await update.message.reply_text(
-        f"Отлично. Теперь пришлите <b>значение</b> (ссылку или текст) для \"{label}\":\n\n<i>Например: https://linkedin.com/in/username</i>", 
+        f"Отлично. Теперь пришлите <b>значение</b> (ссылку или текст) для \"{escape(label)}\":\n\n<i>Например: https://linkedin.com/in/username</i>", 
         parse_mode="HTML"
     )
     return INPUT_CONTACT_VALUE
