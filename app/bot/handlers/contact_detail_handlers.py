@@ -11,7 +11,11 @@ logger = logging.getLogger(__name__)
 
 # Callbacks
 CONTACT_VIEW_PREFIX = "contact_view_"
+CONTACT_VIEW_PREFIX = "contact_view_"
 CONTACT_EDIT_PREFIX = "contact_edit_"
+CONTACT_EDIT_FIELD_PREFIX = "contact_field_"
+CONTACT_DEL_FIELD_PREFIX = "contact_del_field_"
+CONTACT_ADD_FIELD_PREFIX = "contact_add_field"
 CONTACT_DEL_ASK_PREFIX = "contact_del_ask_"
 CONTACT_DEL_CONFIRM_PREFIX = "contact_del_confirm_"
 
@@ -82,31 +86,217 @@ async def delete_contact_confirm(update: Update, context: ContextTypes.DEFAULT_T
 
 async def edit_contact_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Starts editing a contact.
+    Starts editing a contact. Shows a menu of fields to edit.
     """
     query = update.callback_query
     await query.answer()
-    contact_id = query.data.replace(CONTACT_EDIT_PREFIX, "")
     
-    # Store contact_id in user_data to know what we are editing
+    # Check if we are coming from the main edit button or "Back" from a field edit
+    if query.data.startswith(CONTACT_EDIT_PREFIX):
+        contact_id = query.data.replace(CONTACT_EDIT_PREFIX, "")
+    else:
+        # Fallback if we lost context, though unlikely
+        contact_id = context.user_data.get('editing_contact_id')
+        
+    if not contact_id:
+        await update.effective_message.reply_text("❌ Ошибка контекста.")
+        return
+    
+    # Store contact_id in user_data
     context.user_data['editing_contact_id'] = contact_id
+    # Clear specific field if any
+    context.user_data.pop('edit_contact_field', None)
+
+    async with AsyncSessionLocal() as session:
+        contact_service = ContactService(session)
+        contact = await contact_service.get_contact_by_id(contact_id)
+        
+        if not contact:
+            await update.effective_message.reply_text("❌ Контакт не найден.")
+            return
+
+        text = f"✏️ **Редактирование контакта: {contact.name}**\n\nВыберите поле для изменения:"
+        
+        keyboard = [
+            [
+                InlineKeyboardButton("👤 Имя", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}name"),
+                InlineKeyboardButton("🏢 Компания", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}company"),
+                InlineKeyboardButton("💼 Роль", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}role")
+            ],
+            [
+                InlineKeyboardButton("🔗 Контакты (+)", callback_data=f"contact_manage_contacts")
+            ],
+            [
+                InlineKeyboardButton("📄 Заметки", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}notes"),
+                 InlineKeyboardButton("📍 Событие", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}event_name")
+            ],
+             [
+                InlineKeyboardButton("🎯 След. шаг", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}follow_up_action"),
+                InlineKeyboardButton("📝 Договорённости", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}agreements")
+            ],
+            [
+                InlineKeyboardButton("🔙 Назад к просмотру", callback_data=f"{CONTACT_VIEW_PREFIX}{contact.id}")
+            ]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Send as NEW message to keep contact card visible
+        await update.effective_message.reply_text(text=text, reply_markup=reply_markup, parse_mode="Markdown")
+
+async def manage_contact_contacts_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Shows list of contacts to add/delete.
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    contact_id = context.user_data.get('editing_contact_id')
+    if not contact_id:
+         await update.effective_message.reply_text("❌ Ошибка контекста.")
+         return
+
+    async with AsyncSessionLocal() as session:
+        contact_service = ContactService(session)
+        contact = await contact_service.get_contact_by_id(contact_id)
+        
+        text = f"🔗 **Контакты ({contact.name})**\n\nУправление контактами:"
+        keyboard = []
+        
+        # Standard Fields
+        if contact.phone:
+             keyboard.append([InlineKeyboardButton(f"❌ Телефон: {contact.phone}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}phone")])
+        if contact.telegram_username:
+             keyboard.append([InlineKeyboardButton(f"❌ Telegram: {contact.telegram_username}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}telegram_username")])
+        if contact.email:
+             keyboard.append([InlineKeyboardButton(f"❌ Email: {contact.email}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}email")])
+        if contact.linkedin_url:
+             # Truncate
+             short_li = contact.linkedin_url[:20] + "..." if len(contact.linkedin_url) > 20 else contact.linkedin_url
+             keyboard.append([InlineKeyboardButton(f"❌ LinkedIn: {short_li}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}linkedin_url")])
+             
+        # Custom Fields
+        if contact.attributes and 'custom_contacts' in contact.attributes:
+             for idx, cc in enumerate(contact.attributes['custom_contacts']):
+                  label = cc.get('label', 'Contact')
+                  val = cc.get('value', '')
+                  short_val = val[:20] + "..." if len(val) > 20 else val
+                  # We use index to delete custom contacts
+                  keyboard.append([InlineKeyboardButton(f"❌ {label}: {short_val}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}custom_{idx}")])
+
+        keyboard.append([InlineKeyboardButton("➕ Добавить контакт", callback_data=f"{CONTACT_ADD_FIELD_PREFIX}")])
+        keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"{CONTACT_EDIT_PREFIX}{contact_id}")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        # Send as NEW message to keep edit menu visible
+        await update.effective_message.reply_text(text=text, reply_markup=reply_markup, parse_mode="Markdown")
+
+async def delete_contact_field_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Deletes a specific contact field.
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    data = query.data.replace(CONTACT_DEL_FIELD_PREFIX, "")
+    contact_id = context.user_data.get('editing_contact_id')
+    
+    async with AsyncSessionLocal() as session:
+        contact_service = ContactService(session)
+        contact = await contact_service.get_contact_by_id(contact_id)
+        
+        update_data = {}
+        
+        if data.startswith("custom_"):
+            idx = int(data.replace("custom_", ""))
+            if contact.attributes and 'custom_contacts' in contact.attributes:
+                 custom = contact.attributes['custom_contacts']
+                 if 0 <= idx < len(custom):
+                      custom.pop(idx)
+                      # Update attributes
+                      current_attrs = dict(contact.attributes)
+                      current_attrs['custom_contacts'] = custom
+                      # We need to explicitly update attributes via service
+                      # ContactServices smart update merges, so passing dict with same key replaces it? 
+                      # Check service logic. Service: current_attrs.update(data). 
+                      # Wait, if I pass {'custom_contacts': new_list}, it updates that key. Correct.
+                      update_data = {'custom_contacts': custom}
+        else:
+             # Standard field
+             update_data = {data: None}
+             
+        if update_data:
+            # We need to use update_contact but handle 'custom_contacts' correctly.
+            # ContactService.update_contact merges `attributes`.
+            # If we pass `custom_contacts` inside `data` (which is flattened), it goes to attributes.
+            # Wait, `update_contact` logic: 
+            # 1. iter items. if hasattr(contact, field) -> setattr.
+            # 2. attributes.update(data).
+            # So if I pass 'phone': None, it sets phone=None.
+            # If I pass 'custom_contacts': [...], it goes to attributes['custom_contacts'].
+            # Perfect.
+            await contact_service.update_contact(contact.id, update_data)
+            
+    await manage_contact_contacts_menu(update, context)
+
+async def add_contact_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Starts add contact wizard.
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    context.user_data['edit_contact_field'] = 'add_contact_label'
+    
+    # Remove buttons from contacts menu, send prompt separately
+    await query.edit_message_reply_markup(reply_markup=None)
+    
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Введите **название** для нового контакта (например: 'Мой сайт', 'LinkedIn', 'Секретный телефон'):\n\n_Нажмите /cancel для отмены_",
+        parse_mode="Markdown"
+    )
+
+async def handle_contact_edit_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handler when a specific field is selected for editing.
+    """
+    query = update.callback_query
+    await query.answer()
+    
+    field = query.data.replace(CONTACT_EDIT_FIELD_PREFIX, "")
+    context.user_data['edit_contact_field'] = field
+    contact_id = context.user_data.get('editing_contact_id')
+    
+    field_names = {
+        "name": "Имя",
+        "company": "Компания",
+        "role": "Роль",
+        "phone": "Телефон",
+        "telegram_username": "Telegram username/ссылку",
+        "email": "Email",
+        "linkedin_url": "LinkedIn профиль",
+        "notes": "Заметки",
+        "event_name": "Событие/Откуда контакт",
+        "follow_up_action": "Следующий шаг",
+        "agreements": "Договорённости",
+    }
+    
+    label = field_names.get(field, field)
     
     text = (
-        "✏️ **Редактирование контакта**\n\n"
-        "Отправьте мне новую информацию текстом, и я обновлю этот контакт.\n"
-        "Вы можете написать, например: 'Измени телефон на +123456789' или 'Добавь заметку: встретились на конференции'.\n\n"
-        "Или нажмите /cancel для отмены."
+        f"Введите новое значение для **{label}**:\n\n"
+        "_Нажмите /cancel для отмены_"
     )
     
-    # We might need to handle this in a ConversationHandler or checking 'editing_contact_id' in text handler.
-    # For now, we'll rely on the global text handler checking 'editing_contact_id'.
-    # Or cleaner: Enter a specific state if we had a ContactEdit Conversation.
-    # Given the complexity, let's just use the "Smart Update" via text handler if possible, 
-    # but the current text handler treats text as NEW contact or merge. 
-    # To support explicit edit, we should probably set a state.
+    # Remove buttons from edit menu to keep it as reference
+    await query.edit_message_reply_markup(reply_markup=None)
     
-    await query.edit_message_text(text, parse_mode="Markdown")
-    # Note: We need to ensure the main text handler respects this context.
+    # Send prompt as NEW message
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=text,
+        parse_mode="Markdown"
+    )
 
 async def cancel_contact_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """

@@ -7,19 +7,29 @@ from app.services.contact_service import ContactService
 from app.services.export_service import ExportService
 from app.bot.rate_limiter import rate_limit_middleware
 from app.config.constants import MAX_SEARCH_QUERY_LENGTH
+from app.bot.handlers.menu_handlers import NETWORKING_MENU
+
+PAGE_SIZE = 10
 
 logger = logging.getLogger(__name__)
 
 async def list_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handler for /list command. Shows recent contacts.
+    Handler for /list command. Shows recent contacts with pagination.
     """
     user = update.effective_user
     logger.info(f"User {user.id} requested contact list.")
     
+    page = 0
     if update.callback_query:
         await update.callback_query.answer()
         message = update.callback_query.message
+        data = update.callback_query.data
+        if data.startswith("cmd_list_page_"):
+            try:
+                page = int(data.replace("cmd_list_page_", ""))
+            except ValueError:
+                page = 0
     else:
         message = update.message
 
@@ -28,16 +38,27 @@ async def list_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
         
         contact_service = ContactService(session)
-        contacts = await contact_service.get_recent_contacts(db_user.id)
+        # Fetch one extra to determine if there is a next page
+        contacts = await contact_service.get_recent_contacts(db_user.id, limit=PAGE_SIZE + 1, offset=page * PAGE_SIZE)
         
-        if not contacts:
-            await message.reply_text("У тебя пока нет контактов.")
+        has_next = len(contacts) > PAGE_SIZE
+        current_contacts = contacts[:PAGE_SIZE]
+        
+        if not current_contacts and page == 0:
+            keyboard = [[InlineKeyboardButton("⬅️ Назад", callback_data=NETWORKING_MENU)]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            text = "У тебя пока нет контактов."
+            # Edit if callback, reply if message
+            if update.callback_query:
+                await message.edit_text(text, reply_markup=reply_markup)
+            else:
+                await message.reply_text(text, reply_markup=reply_markup)
             return
 
-        text = "📋 *Твои последние контакты:*\nВыберите контакт, чтобы посмотреть подробности:"
+        text = f"📋 *Твои последние контакты (стр. {page + 1}):*\nВыберите контакт, чтобы посмотреть подробности:"
         
         keyboard = []
-        for contact in contacts:
+        for contact in current_contacts:
             btn_text = f"{contact.name}"
             if contact.company:
                 btn_text += f" — {contact.company}"
@@ -47,8 +68,29 @@ async def list_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
             keyboard.append([InlineKeyboardButton(btn_text, callback_data=f"contact_view_{contact.id}")])
             
+        # Pagination controls
+        pagination_row = []
+        if page > 0:
+            pagination_row.append(InlineKeyboardButton("⬅️ Стр. назад", callback_data=f"cmd_list_page_{page - 1}"))
+        
+        # Helper text button purely for info (optional, or just skip)
+        # pagination_row.append(InlineKeyboardButton(f"📄 {page + 1}", callback_data="noop")) 
+        
+        if has_next:
+            pagination_row.append(InlineKeyboardButton("Стр. вперед ➡️", callback_data=f"cmd_list_page_{page + 1}"))
+            
+        if pagination_row:
+            keyboard.append(pagination_row)
+            
+        # Back button
+        keyboard.append([InlineKeyboardButton("⬅️ Назад в меню", callback_data=NETWORKING_MENU)])
+            
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        
+        if update.callback_query:
+            await message.edit_text(text, reply_markup=reply_markup, parse_mode="Markdown")
+        else:
+            await message.reply_text(text, reply_markup=reply_markup, parse_mode="Markdown")
 
 async def find_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """

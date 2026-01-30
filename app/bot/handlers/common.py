@@ -36,15 +36,6 @@ def format_card(contact):
         if contact.role:
             text += f" · {contact.role}"
         text += "\n"
-    if contact.phone:
-        clean_phone = re.sub(r'[^\d+]', '', contact.phone)
-        text += f"📱 [{contact.phone}](tel:{clean_phone})\n"
-    if contact.telegram_username and show_tg_line:
-        tg = contact.telegram_username.lstrip("@")
-        safe_tg_url = f"https://t.me/{tg}".replace("_", "\\_")
-        text += f"💬 {safe_tg_url}\n"
-    if contact.email:
-        text += f"📧 [{contact.email}](mailto:{contact.email})\n"
     
     text += "\n"
     if contact.event_name:
@@ -57,13 +48,15 @@ def format_card(contact):
             
     if contact.follow_up_action:
         text += f"\n🎯 Следующий шаг: {contact.follow_up_action}\n"
-        
+    
+    # Removed "can_help_with" and "what_looking_for" as per update,
+    # OR we can keep looking_for but remove help_with if specifically requested.
+    # User said: "Может помочь убери" (Remove Can Help With).
+    # He didn't explicitly say remove "looking for", but focused on layout.
+    # Let's keep looking_for if it exists, as it's useful context but less cluttered.
     if contact.what_looking_for:
         text += f"\n💡 Ищет: {contact.what_looking_for}\n"
-    
-    if contact.can_help_with:
-        text += f"🤝 Может помочь: {contact.can_help_with}\n"
-    
+
     # Show notes/errors (stored in attributes for contacts)
     notes = None
     if hasattr(contact, 'attributes') and contact.attributes:
@@ -71,6 +64,59 @@ def format_card(contact):
 
     if notes:
         text += f"\n📄 Заметки: {notes}\n"
+
+    # CONTACT DETAILS SECTION (Moved to bottom)
+    text += "\n📞 *Контакты:*\n"
+    has_contacts = False
+    
+    if contact.phone:
+        clean_phone = re.sub(r'[^\d+]', '', contact.phone)
+        text += f"• Телефон: [{contact.phone}](tel:{clean_phone})\n"
+        has_contacts = True
+        
+    if contact.telegram_username:
+        # Normalize: strip URL prefixes and @ symbol
+        tg = contact.telegram_username
+        tg = re.sub(r'^https?://t\.me/', '', tg)
+        tg = tg.lstrip("@")
+        safe_display = tg.replace("_", "\\_")
+        text += f"• Telegram: [@{safe_display}](https://t.me/{tg})\n"
+        has_contacts = True
+        
+    if contact.email:
+        text += f"• Почта: [{contact.email}](mailto:{contact.email})\n"
+        has_contacts = True
+        
+    if contact.linkedin_url:
+        # Extract display name from URL if possible
+        li_display = contact.linkedin_url
+        if "linkedin.com/in/" in li_display:
+            li_display = li_display.split("linkedin.com/in/")[-1].strip("/")
+        text += f"• LinkedIn: [{li_display}](https://www.{contact.linkedin_url.replace('https://', '').replace('http://', '').replace('www.', '')})\n"
+        has_contacts = True
+        
+    # Custom Contacts from Attributes
+    if hasattr(contact, 'attributes') and contact.attributes:
+        custom_contacts = contact.attributes.get('custom_contacts', [])
+        if custom_contacts:
+             for cc in custom_contacts:
+                # Expecting dict like {'label': '...', 'value': '...'}
+                label = cc.get('label', 'Ссылка')
+                val = cc.get('value', '')
+                if val:
+                    # Check if val is a URL
+                    if val.startswith('http') or val.startswith('t.me'):
+                         # If it's t.me but no protocol, add it
+                         link = val
+                         if val.startswith('t.me'):
+                             link = f"https://{val}"
+                         text += f"• [{label}]({link})\n"
+                    else:
+                         text += f"• {label}: {val}\n"
+                    has_contacts = True
+        
+    if not has_contacts:
+        text += "_(пусто)_\n"
 
     # Show OSINT data if available
     if hasattr(contact, 'osint_data') and contact.osint_data:
@@ -96,18 +142,16 @@ def get_contact_keyboard(contact):
     # Row 2: Enrichment & Tools
     row2 = []
     if not contact.osint_data or contact.osint_data.get("no_results"):
-        row2.append(InlineKeyboardButton("🌍 OSINT", callback_data=f"enrich_start_{contact.id}"))
+        row2.append(InlineKeyboardButton("Найти информацию (OSINT)", callback_data=f"enrich_start_{contact.id}"))
     else:
         row2.append(InlineKeyboardButton("🔄 Обновить OSINT", callback_data=f"enrich_start_{contact.id}"))
         
     row2.append(InlineKeyboardButton("✨ Визитка", callback_data=f"gen_card_{contact.id}"))
     keyboard.append(row2)
     
-    # Row 3: Export & Delete
+    # Row 3: Delete
     row3 = [
-        InlineKeyboardButton("📥 Notion", callback_data=f"export_notion_{contact.id}"),
-        InlineKeyboardButton("📊 Sheets", callback_data=f"export_sheets_{contact.id}"),
-        InlineKeyboardButton("🗑", callback_data=f"contact_del_ask_{contact.id}")
+        InlineKeyboardButton("Удалить", callback_data=f"contact_del_ask_{contact.id}")
     ]
     keyboard.append(row3)
 

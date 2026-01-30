@@ -24,8 +24,11 @@ from app.bot.handlers.menu_handlers import (
     MAIN_MENU, PROFILE_MENU, MATERIALS_MENU, NETWORKING_MENU, TOOLS_MENU, SETTINGS_MENU
 )
 from app.bot.handlers.contact_detail_handlers import (
-    view_contact, delete_contact_ask, delete_contact_confirm, edit_contact_start, cancel_contact_edit,
-    CONTACT_VIEW_PREFIX, CONTACT_EDIT_PREFIX, CONTACT_DEL_ASK_PREFIX, CONTACT_DEL_CONFIRM_PREFIX
+    view_contact, delete_contact_ask, delete_contact_confirm, edit_contact_start, cancel_contact_edit, handle_contact_edit_field,
+    manage_contact_contacts_menu, delete_contact_field_handler, add_contact_start,
+    CONTACT_VIEW_PREFIX, CONTACT_EDIT_PREFIX, CONTACT_EDIT_FIELD_PREFIX, 
+    CONTACT_DEL_FIELD_PREFIX, CONTACT_ADD_FIELD_PREFIX,
+    CONTACT_DEL_ASK_PREFIX, CONTACT_DEL_CONFIRM_PREFIX
 )
 
 from app.bot.reminder_handlers import list_reminders, reminder_action_callback
@@ -71,7 +74,7 @@ async def route_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif cmd == "share":
         return await share_card(update, context)
          
-    elif cmd == "list":
+    elif cmd == "list" or cmd.startswith("list_page_"):
         return await list_contacts(update, context)
     elif cmd == "find":
         return await find_contact(update, context)
@@ -294,6 +297,10 @@ def create_bot():
     # Detail Handlers
     app.add_handler(CallbackQueryHandler(view_contact, pattern=f"^{CONTACT_VIEW_PREFIX}"))
     app.add_handler(CallbackQueryHandler(edit_contact_start, pattern=f"^{CONTACT_EDIT_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(handle_contact_edit_field, pattern=f"^{CONTACT_EDIT_FIELD_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(manage_contact_contacts_menu, pattern="^contact_manage_contacts$"))
+    app.add_handler(CallbackQueryHandler(delete_contact_field_handler, pattern=f"^{CONTACT_DEL_FIELD_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(add_contact_start, pattern=f"^{CONTACT_ADD_FIELD_PREFIX}"))
     app.add_handler(CallbackQueryHandler(delete_contact_ask, pattern=f"^{CONTACT_DEL_ASK_PREFIX}"))
     app.add_handler(CallbackQueryHandler(delete_contact_confirm, pattern=f"^{CONTACT_DEL_CONFIRM_PREFIX}"))
 

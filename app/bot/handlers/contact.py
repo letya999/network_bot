@@ -243,10 +243,168 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         # EXPLICIT EDITING LOGIC
         editing_contact_id = context.user_data.get('editing_contact_id')
+        edit_contact_field = context.user_data.get('edit_contact_field')
+
         if editing_contact_id:
             logger.info(f"User {user.id} is explicitly editing contact {editing_contact_id}")
             contact_service = ContactService(session)
             
+            # 1. SPECIFIC FIELD EDITING (Menu driven)
+            if edit_contact_field:
+                # Need to handle Add Contact Wizard
+                if edit_contact_field == 'add_contact_label':
+                    context.user_data['add_contact_label_temp'] = text
+                    context.user_data['edit_contact_field'] = 'add_contact_value'
+                    await update.message.reply_text(
+                        f"Отлично. Теперь введите **значение** для '{text}' (ссылку, телефон или текст):",
+                        parse_mode="Markdown"
+                    )
+                    return
+                
+                elif edit_contact_field == 'add_contact_value':
+                    label = context.user_data.get('add_contact_label_temp', 'Contact')
+                    value = text
+                    context.user_data.pop('add_contact_label_temp', None)
+                    
+                    # Logic to map to standard fields or custom
+                    update_data = {}
+                    label_lower = label.lower().strip()
+                    
+                    GENERIC_PHONES = {'phone', 'telephone', 'mobile', 'телефон', 'мобильный', 'тел', 'сот', 'сотовый'}
+                    GENERIC_TG = {'telegram', 'телеграм', 'тг', 'tg', 'telegram username'}
+                    GENERIC_EMAIL = {'email', 'mail', 'почта', 'емейл', 'электронная почта'}
+                    GENERIC_LINKEDIN = {'linkedin', 'линкедин', 'in', 'линк'}
+                    
+                    # Strict check for standard fields to avoid stealing custom labels
+                    if label_lower in GENERIC_PHONES:
+                        update_data = {'phone': value}
+                    elif label_lower in GENERIC_TG:
+                        # Clean username if it's a URL
+                        clean_tg = value.replace("https://t.me/", "").replace("http://t.me/", "").strip().lstrip("@")
+                        update_data = {'telegram_username': clean_tg}
+                    elif label_lower in GENERIC_EMAIL:
+                         update_data = {'email': value}
+                    elif label_lower in GENERIC_LINKEDIN:
+                         update_data = {'linkedin_url': value}
+                    else:
+                         # It's a custom contact
+                         # We need to fetch existing attributes to append
+                         contact = await contact_service.get_contact_by_id(editing_contact_id)
+                         if contact:
+                             custom = contact.attributes.get('custom_contacts', []) if contact.attributes else []
+                             custom.append({'label': label, 'value': value})
+                             update_data = {'custom_contacts': custom}
+                    
+                    if update_data:
+                        try:
+                            cid = uuid.UUID(str(editing_contact_id))
+                            updated_contact = await contact_service.update_contact(cid, update_data)
+                            
+                            if updated_contact:
+                                 context.user_data.pop('edit_contact_field', None)
+                                 await update.message.reply_text("✅ Контакт добавлен.")
+                                 
+                                 # Return to Manage Contacts Menu
+                                 from app.bot.handlers.contact_detail_handlers import manage_contact_contacts_menu
+                                 # Fake update
+                                 # We need to construct a fake callback query update to reuse the handler?
+                                 # No, the handler expects update.callback_query usually. 
+                                 # If we call it with a Message update, it might check callback_query.
+                                 # Let's check logic of `manage_contact_contacts_menu`...
+                                 # It does `query = update.callback_query` and `await query.answer()`. This will FAIL on message update.
+                                 # So we must recreate the UI manually here or Refactor the handler to accept message.
+                                 
+                                 # OPTION: duplicate logic (easiest now)
+                                 # Or better: make a common function `show_manage_contacts(update, context, contact_id)`
+                                 
+                                 # Let's duplicate "Show Menu" logic briefly but using send_message
+                                 from app.bot.handlers.contact_detail_handlers import (
+                                     CONTACT_DEL_FIELD_PREFIX, CONTACT_ADD_FIELD_PREFIX, CONTACT_EDIT_PREFIX
+                                 )
+                                 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+                                 
+                                 menu_text = "🔗 **Контакты**\n\nУправление контактами:"
+                                 keyboard = []
+                                 contact = updated_contact
+                                 # Standard Fields
+                                 if contact.phone:
+                                      keyboard.append([InlineKeyboardButton(f"❌ Телефон: {contact.phone}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}phone")])
+                                 if contact.telegram_username:
+                                      keyboard.append([InlineKeyboardButton(f"❌ Telegram: {contact.telegram_username}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}telegram_username")])
+                                 if contact.email:
+                                      keyboard.append([InlineKeyboardButton(f"❌ Email: {contact.email}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}email")])
+                                 if contact.linkedin_url:
+                                      short_li = contact.linkedin_url[:20] + "..." if len(contact.linkedin_url) > 20 else contact.linkedin_url
+                                      keyboard.append([InlineKeyboardButton(f"❌ LinkedIn: {short_li}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}linkedin_url")])
+                                 # Custom
+                                 if contact.attributes and 'custom_contacts' in contact.attributes:
+                                      for idx, cc in enumerate(contact.attributes['custom_contacts']):
+                                           lbl = cc.get('label', 'Contact')
+                                           val = cc.get('value', '')
+                                           short_val = val[:20] + "..." if len(val) > 20 else val
+                                           keyboard.append([InlineKeyboardButton(f"❌ {lbl}: {short_val}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}custom_{idx}")])
+
+                                 keyboard.append([InlineKeyboardButton("➕ Добавить контакт", callback_data=f"{CONTACT_ADD_FIELD_PREFIX}")])
+                                 keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"{CONTACT_EDIT_PREFIX}{contact.id}")])
+                                 
+                                 await update.message.reply_text(menu_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+                                 return
+                        except Exception:
+                             logger.exception("Error adding contact")
+                             context.user_data.pop('edit_contact_field', None)
+                             await update.message.reply_text("❌ Ошибка.")
+                             return
+
+                # Normal single field edit
+                # Use raw text for the field value
+                update_data = {edit_contact_field: text}
+                
+                try:
+                    cid = uuid.UUID(str(editing_contact_id))
+                    updated_contact = await contact_service.update_contact(cid, update_data)
+                    
+                    if updated_contact:
+                        context.user_data.pop('edit_contact_field', None)
+                        await update.message.reply_text(f"✅ Поле обновлено.")
+                        
+                        # Show Edit Menu again to continue editing
+                        # Re-import to avoid circular dependency at top level
+                        from app.bot.handlers.contact_detail_handlers import CONTACT_EDIT_FIELD_PREFIX, CONTACT_VIEW_PREFIX, CONTACT_ADD_FIELD_PREFIX
+                        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+                        menu_text = f"✏️ **Редактирование контакта: {updated_contact.name}**\n\nВыберите поле для изменения:"
+                        keyboard = [
+                            [
+                                 InlineKeyboardButton("👤 Имя", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}name"),
+                                 InlineKeyboardButton("🏢 Компания", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}company"),
+                                 InlineKeyboardButton("💼 Роль", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}role")
+                            ],
+                            [
+                                InlineKeyboardButton("🔗 Контакты (+)", callback_data=f"contact_manage_contacts")
+                            ],
+                            [
+                                InlineKeyboardButton("📄 Заметки", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}notes"),
+                                InlineKeyboardButton("📍 Событие", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}event_name")
+                            ],
+                            [
+                                InlineKeyboardButton("🎯 След. шаг", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}follow_up_action"),
+                                InlineKeyboardButton("📝 Договорённости", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}agreements")
+                            ],
+                            [
+                                InlineKeyboardButton("🔙 Назад к просмотру", callback_data=f"{CONTACT_VIEW_PREFIX}{updated_contact.id}")
+                            ]
+                        ]
+                        await update.message.reply_text(menu_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
+                        return
+                    else:
+                        await update.message.reply_text("❌ Ошибка: Контакт не найден.")
+                        context.user_data.pop('editing_contact_id', None)
+                        return
+                except ValueError:
+                     context.user_data.pop('editing_contact_id', None)
+                     return
+
+            # 2. FULL TEXT EDITING (Legacy/Smart Update)
             # Handle reminders if present
             if data.get("reminders"):
                  reminder_service = ReminderService(session)
