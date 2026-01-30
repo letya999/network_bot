@@ -26,11 +26,11 @@ async def test_extract_contact_data_mock():
 async def test_customize_card_intro_mock():
     mock_model = AsyncMock()
     mock_response = MagicMock()
-    mock_response.text = "Hello"
+    mock_response.text = '{"message": "Hello"}'
     mock_model.generate_content_async.return_value = mock_response
     
     with patch("google.generativeai.GenerativeModel", return_value=mock_model), \
          patch("app.core.config.settings.GEMINI_API_KEY", "fake"):
         service = GeminiService()
         result = await service.customize_card_intro("Profile", "Target")
-        assert result == "Hello"
+        assert result["message"] == "Hello"

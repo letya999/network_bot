@@ -8,7 +8,7 @@ import uuid
 @pytest.mark.asyncio
 async def test_find_matches_manual(mock_update, mock_context, mock_session):
     contact_id = uuid.uuid4()
-    mock_context.user_data["last_contact_id"] = contact_id
+    mock_update.callback_query.data = f"matches_{contact_id}"
     mock_session.get.return_value = Contact(id=contact_id, name="AI Dev")
     
     with patch("app.services.match_service.MatchService.get_user_matches", AsyncMock(return_value={"is_match": True, "synergy_summary": "Sync"})), \

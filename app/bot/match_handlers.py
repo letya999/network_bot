@@ -5,6 +5,7 @@ from app.db.session import AsyncSessionLocal
 from app.services.match_service import MatchService
 from app.services.user_service import UserService
 from app.services.contact_service import ContactService
+from app.models.contact import Contact
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -85,7 +86,7 @@ async def find_matches_command(update: Update, context: ContextTypes.DEFAULT_TYP
             # match_service.get_user_matches takes (contact, user).
             
             contact_service = ContactService(session)
-            all_contacts = await contact_service.get_contacts(user.id, limit=20) # Limit 20 for now
+            all_contacts = await contact_service.get_recent_contacts(user.id, limit=20) # Limit 20 for now
             
             matches_found = []
             for c in all_contacts:
@@ -195,7 +196,7 @@ async def perform_semantic_search(message, query, user_id, session):
         await message.reply_text("AI не нашёл ничего подходящего по смыслу.")
         return
         
-        from html import escape
+    from html import escape
     text = "🧠 <b>Результаты AI поиска:</b>\n\n"
     from app.models.contact import Contact
     for m in matches:

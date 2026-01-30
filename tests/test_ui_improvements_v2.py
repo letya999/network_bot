@@ -35,17 +35,26 @@ async def test_list_contacts_with_buttons(mock_update, mock_context, mock_sessio
         # Verify reply was called
         # Depending on if it was callback or message
         message = mock_update.effective_message
-        assert message.reply_text.called
+        if mock_update.callback_query:
+            assert message.edit_text.called or message.reply_text.called
+        else:
+            assert message.reply_text.called
         
         # Verify arguments
-        args, kwargs = message.reply_text.call_args
+        if mock_update.callback_query:
+            if message.edit_text.called:
+                args, kwargs = message.edit_text.call_args
+            else:
+                args, kwargs = message.reply_text.call_args
+        else:
+             args, kwargs = message.reply_text.call_args
         assert "reply_markup" in kwargs
         markup = kwargs["reply_markup"]
         assert isinstance(markup, InlineKeyboardMarkup)
         
         # Verify button content
         # markup.inline_keyboard is a list of lists (rows of buttons)
-        assert len(markup.inline_keyboard) == 1
+        assert len(markup.inline_keyboard) == 2 # 1 contact row + 1 back row
         button = markup.inline_keyboard[0][0]
         assert "John Doe" in button.text
         assert button.callback_data == "contact_view_c1"

@@ -10,6 +10,9 @@ async def test_start_command(mock_update, mock_context):
     """Test that /start displays the new menu system."""
     mock_update.callback_query = None
     
+    # Mock user_data as regular dict to avoid AsyncMock issues
+    mock_context.user_data = {} 
+    
     with patch("app.services.user_service.UserService.get_or_create_user", AsyncMock()):
         await start_menu(mock_update, mock_context)
         assert mock_update.message.reply_text.called
@@ -20,6 +23,7 @@ async def test_start_command(mock_update, mock_context):
 @pytest.mark.asyncio
 async def test_list_contacts_with_data(mock_update, mock_context):
     c1 = Contact(id=uuid.uuid4(), name="Alice")
+    mock_update.callback_query = None # Explicitly set for this test
     with patch("app.services.contact_service.ContactService.get_recent_contacts", AsyncMock(return_value=[c1])):
         await list_contacts(mock_update, mock_context)
         

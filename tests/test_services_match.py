@@ -86,9 +86,14 @@ async def test_match_service_find_peer_matches(mock_session, mock_gemini):
         osint_data={"geography": {"lived_in": ["Berlin"]}}
     )
     
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [peer]
-    mock_session.execute.return_value = mock_result
+    mock_contacts_result = MagicMock()
+    mock_contacts_result.scalars.return_value.all.return_value = [peer]
+    
+    mock_cache_result = MagicMock()
+    mock_cache_result.scalar_one_or_none.return_value = None # Cache miss
+
+    # First call is contacts, subsequent are cache checks
+    mock_session.execute.side_effect = [mock_contacts_result, mock_cache_result, mock_cache_result]
     
     mock_gemini.extract_contact_data.return_value = {
         "is_match": True,

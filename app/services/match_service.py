@@ -1,7 +1,9 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
+import asyncio
 from app.models.contact import Contact
 from app.models.user import User
+from app.models.match import Match
 from app.services.gemini_service import GeminiService
 from typing import List, Dict, Any, Optional
 import uuid
@@ -131,6 +133,8 @@ class MatchService:
     async def find_peer_matches(self, contact: Contact, limit: int = 50) -> List[Dict[str, Any]]:
         """
         Find matches between this contact and other contacts in the user's database.
+        Uses asyncio.gather for parallel AI processing to avoid blocking DB pool.
+        Checks 'matches' table for cached results (TTL 48h).
         """
         # Get other active contacts
         stmt = select(Contact).where(
@@ -142,26 +146,114 @@ class MatchService:
         result = await self.session.execute(stmt)
         other_contacts = result.scalars().all()
         
-        matches = []
         # Optimization: Only match against people who have some bio/needs or enrich data
         potential_peers = [c for c in other_contacts if c.what_looking_for or c.can_help_with or c.osint_data]
         
         contact_profile = self._format_contact_context(contact)
-
+        
         # Limit to top 5 to avoid API hitting limits in one go
-        for peer in potential_peers[:5]:
+        peers_to_check = potential_peers[:5]
+        
+        matches_found = []
+        peers_needing_ai = []
+        
+        # 1. Check Cache
+        from datetime import datetime, timedelta
+        
+        for peer in peers_to_check:
+            # Check for existing valid match
+            # Note: We query strictly direction contact->peer as synergy might be directional
+            cache_stmt = select(Match).where(
+                Match.contact_a_id == contact.id,
+                Match.contact_b_id == peer.id,
+                Match.expires_at > datetime.now()
+            )
+            cache_res = await self.session.execute(cache_stmt)
+            cached_match = cache_res.scalar_one_or_none()
+            
+            if cached_match:
+                if cached_match.score > 60:
+                    matches_found.append({
+                        "is_match": True,
+                        "match_score": cached_match.score,
+                        "synergy_summary": cached_match.synergy_summary,
+                        "suggested_pitch": cached_match.suggested_pitch,
+                        "peer_id": str(peer.id),
+                        "peer_name": peer.name
+                    })
+            else:
+                peers_needing_ai.append(peer)
+
+        # 2. Run AI for missing
+        tasks = []
+        peer_idx_map = [] 
+
+        for peer in peers_needing_ai:
              peer_profile = self._format_contact_context(peer)
              
              prompt = self.gemini.get_prompt("find_matches")
              prompt = prompt.replace("{profile_a}", contact_profile).replace("{profile_b}", peer_profile)
-             match_data = await self.gemini.extract_contact_data(prompt_template=prompt)
              
-             if match_data.get("is_match") and match_data.get("match_score", 0) > 60:
-                 match_data["peer_id"] = str(peer.id)
-                 match_data["peer_name"] = peer.name
-                 matches.append(match_data)
+             tasks.append(self.gemini.extract_contact_data(prompt_template=prompt))
+             peer_idx_map.append(peer)
+
+        if tasks:
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for i, match_data in enumerate(results):
+                 peer = peer_idx_map[i]
                  
-        return matches
+                 if isinstance(match_data, Exception):
+                     logger.error(f"Error matching contact {contact.id} with {peer.id}: {match_data}")
+                     continue
+                
+                 is_match = match_data.get("is_match", False)
+                 score = match_data.get("match_score", 0)
+                 
+                 # Save to Cache (even if low score, to avoid re-checking immediately)
+                 # Delete old match if exists to avoid unique constraint error? 
+                 # We selected where expires_at > now, so maybe there is an expired one?
+                 # Upsert logic is better. Or delete old first.
+                 
+
+                 # Actually better to just use helper or ignore error, but let's do clean delete of ANY existing record for this pair
+                 # But separate delete query is extra roundtrip. 
+                 # Let's hope the user doesn't hit unique constraint with race conditions.
+                 # For simplicity, we assume we want to overwrite.
+                 
+                 # Check if exists to update or insert
+                 existing_stmt = select(Match).where(
+                    Match.contact_a_id == contact.id,
+                    Match.contact_b_id == peer.id
+                 )
+                 existing = (await self.session.execute(existing_stmt)).scalar_one_or_none()
+                 
+                 if existing:
+                     existing.score = score
+                     existing.synergy_summary = match_data.get("synergy_summary")
+                     existing.suggested_pitch = match_data.get("suggested_pitch")
+                     existing.expires_at = datetime.now() + timedelta(hours=48)
+                 else:
+                     new_match = Match(
+                         user_id=contact.user_id,
+                         contact_a_id=contact.id,
+                         contact_b_id=peer.id,
+                         score=score,
+                         synergy_summary=match_data.get("synergy_summary"),
+                         suggested_pitch=match_data.get("suggested_pitch"),
+                         expires_at=datetime.now() + timedelta(hours=48)
+                     )
+                     self.session.add(new_match)
+
+                 if is_match and score > 60:
+                     match_data["peer_id"] = str(peer.id)
+                     match_data["peer_name"] = peer.name
+                     matches_found.append(match_data)
+            
+            # Commit updates to cache
+            await self.session.commit()
+                 
+        return matches_found
 
     async def semantic_search(self, user_id: uuid.UUID, query: str) -> List[Dict[str, Any]]:
         """

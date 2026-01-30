@@ -39,8 +39,10 @@ async def test_menu_callback_navigation(mock_update, mock_context):
     mock_update.callback_query.answer = AsyncMock()
     mock_update.callback_query.edit_message_text = AsyncMock()
     mock_update.callback_query.data = "menu_profile"
+    mock_context.user_data = {}
     
-    with patch("app.services.user_service.UserService.get_or_create_user", AsyncMock()):
+    mock_user = MagicMock(id=123, profile_data={})
+    with patch("app.services.user_service.UserService.get_or_create_user", AsyncMock(return_value=mock_user)):
         await menu_callback(mock_update, mock_context)
         
         assert mock_update.callback_query.answer.called

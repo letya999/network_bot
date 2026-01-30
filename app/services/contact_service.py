@@ -2,6 +2,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_
 from app.models.contact import Contact, ContactStatus
 from app.models.interaction import Interaction, InteractionType
+from sqlalchemy.orm import load_only
 from typing import Dict, Any, List
 from app.services.reminder_service import ReminderService
 from app.core.config import settings
@@ -104,7 +105,24 @@ class ContactService:
         return contact
 
     async def get_recent_contacts(self, user_id: uuid.UUID, limit: int = 10, offset: int = 0) -> List[Contact]:
-        query = select(Contact).where(Contact.user_id == user_id).order_by(Contact.created_at.desc()).limit(limit).offset(offset)
+        query = (
+            select(Contact)
+            .where(Contact.user_id == user_id)
+            .order_by(Contact.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+            .options(
+                load_only(
+                    Contact.id, 
+                    Contact.name, 
+                    Contact.company, 
+                    Contact.role, 
+                    Contact.created_at, 
+                    Contact.status,
+                    Contact.telegram_username
+                )
+            )
+        )
         result = await self.session.execute(query)
         return result.scalars().all()
 
@@ -169,7 +187,22 @@ class ContactService:
         return contact
 
     async def get_all_contacts(self, user_id: uuid.UUID) -> List[Contact]:
-        query = select(Contact).where(Contact.user_id == user_id).order_by(Contact.created_at.desc())
+        query = (
+            select(Contact)
+            .where(Contact.user_id == user_id)
+            .order_by(Contact.created_at.desc())
+            .options(
+                load_only(
+                    Contact.id, 
+                    Contact.name, 
+                    Contact.company, 
+                    Contact.role, 
+                    Contact.created_at, 
+                    Contact.status,
+                    Contact.telegram_username
+                )
+            )
+        )
         result = await self.session.execute(query)
         return result.scalars().all()
 
