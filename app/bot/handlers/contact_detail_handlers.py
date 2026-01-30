@@ -5,7 +5,7 @@ from telegram.ext import ContextTypes, ConversationHandler
 from app.db.session import AsyncSessionLocal
 from app.services.user_service import UserService
 from app.services.contact_service import ContactService
-from app.bot.handlers.common import format_card, get_contact_keyboard
+from app.bot.views import format_card, get_contact_keyboard
 
 logger = logging.getLogger(__name__)
 

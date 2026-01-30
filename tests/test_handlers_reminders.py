@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from app.bot.reminder_handlers import list_reminders, reminder_action_callback
+from app.bot.handlers.reminder_handlers import list_reminders, reminder_action_callback
 from app.models.reminder import Reminder
 import uuid
 from datetime import datetime

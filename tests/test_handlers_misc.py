@@ -9,7 +9,7 @@ from telegram.ext import ConversationHandler
 @pytest.fixture(autouse=True)
 def mock_user_service():
     # Patch where it is looked up in prompt.py
-    with patch("app.bot.handlers.prompt.UserService") as mock:
+    with patch("app.bot.handlers.prompt_handlers.UserService") as mock:
         service_instance = AsyncMock()
         mock.return_value = service_instance
         yield service_instance
@@ -44,22 +44,22 @@ async def test_set_event_mode_stop(mock_update, mock_context):
     assert "current_event" not in mock_context.user_data
     assert "выключен" in mock_update.message.reply_text.call_args[0][0].lower()
 
-from app.bot.profile_handlers import send_card, share_card
+from app.bot.handlers.profile_handlers import send_card, share_card
 
 @pytest.mark.asyncio
 async def test_send_card(mock_update, mock_context, mock_user_service):
     mock_profile = MagicMock(full_name="Alice", bio="Bio")
     
     # Patch where imported in profile_handlers.py
-    with patch("app.bot.profile_handlers.ProfileService.get_profile", AsyncMock(return_value=mock_profile)), \
-         patch("app.bot.profile_handlers.CardService.generate_text_card", return_value="Card Text"):
+    with patch("app.bot.handlers.profile_handlers.ProfileService.get_profile", AsyncMock(return_value=mock_profile)), \
+         patch("app.bot.handlers.profile_handlers.CardService.generate_text_card", return_value="Card Text"):
         
         # profile_handlers instantiates ProfileService(session), so we need to ensure that works.
         # However, we are patching get_profile on the class? 
         # No, ProfileService(session) returns an instance. 
-        # If we patch app.bot.profile_handlers.ProfileService, we mock the class.
+        # If we patch app.bot.handlers.profile_handlers.ProfileService, we mock the class.
         
-        with patch("app.bot.profile_handlers.ProfileService") as MockProfileService:
+        with patch("app.bot.handlers.profile_handlers.ProfileService") as MockProfileService:
              instance = AsyncMock()
              MockProfileService.return_value = instance
              instance.get_profile.return_value = mock_profile
@@ -95,7 +95,7 @@ async def test_show_prompt_default(mock_update, mock_context, mock_user_service)
     mock_user_service.get_or_create_user = AsyncMock(return_value=mock_user)
     
     # Patch GeminiService in prompt.py
-    with patch("app.bot.handlers.prompt.GeminiService") as MockGemini:
+    with patch("app.bot.handlers.prompt_handlers.GeminiService") as MockGemini:
         mock_gemini = MockGemini.return_value
         mock_gemini.get_prompt.return_value = "System Prompt"
         

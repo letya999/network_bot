@@ -8,10 +8,7 @@ Handlers for:
 """
 
 import logging
-import csv
-import io
 import uuid
-from datetime import datetime
 from typing import Optional
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -20,7 +17,9 @@ from telegram.ext import ContextTypes, ConversationHandler
 from app.db.session import AsyncSessionLocal
 from app.services.user_service import UserService
 from app.services.contact_service import ContactService
-from app.services.osint_service import OSINTService, format_osint_data
+from app.services.osint_service import OSINTService
+from app.services.csv_service import CSVImportService
+from app.bot.views import format_osint_data
 from app.models.contact import Contact
 from app.bot.rate_limiter import rate_limit_middleware
 
@@ -294,13 +293,10 @@ async def handle_csv_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Пожалуйста, отправь CSV файл.")
         return WAITING_FOR_CSV
 
-    if document.file_size > 5 * 1024 * 1024:  # 5MB limit
-        await update.message.reply_text("❌ Файл слишком большой. Максимум 5 МБ.")
-        return WAITING_FOR_CSV
-
     file_name = document.file_name or ""
-    if not file_name.endswith(".csv"):
-        await update.message.reply_text("❌ Пожалуйста, отправь файл в формате CSV.")
+    error = CSVImportService.validate_csv_file(file_name, document.file_size)
+    if error:
+        await update.message.reply_text(f"❌ {error}")
         return WAITING_FOR_CSV
 
     status_msg = await update.message.reply_text("⏳ Обрабатываю файл...")
@@ -311,73 +307,12 @@ async def handle_csv_import(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_bytes = await file.download_as_bytearray()
         content = file_bytes.decode("utf-8")
 
-        # Parse CSV
-        reader = csv.DictReader(io.StringIO(content))
-
         async with AsyncSessionLocal() as session:
             user_service = UserService(session)
             db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
 
-            contact_service = ContactService(session)
-
-            imported = 0
-            skipped = 0
-            errors = []
-
-            for row in reader:
-                try:
-                    # LinkedIn export format varies, try common field names
-                    first_name = row.get("First Name", row.get("first_name", ""))
-                    last_name = row.get("Last Name", row.get("last_name", ""))
-                    name = f"{first_name} {last_name}".strip()
-
-                    if not name:
-                        skipped += 1
-                        continue
-
-                    company = row.get("Company", row.get("company", ""))
-                    position = row.get("Position", row.get("position", row.get("Title", "")))
-                    email = row.get("Email Address", row.get("email", ""))
-                    linkedin_url = row.get("URL", row.get("Profile URL", row.get("linkedin_url", "")))
-
-                    # Check for duplicates
-                    existing = await contact_service.find_contacts(db_user.id, name)
-                    if existing:
-                        # Check if it's the same person (same company)
-                        for ex in existing:
-                            if ex.company and company and ex.company.lower() == company.lower():
-                                skipped += 1
-                                break
-                        else:
-                            # Different company, might be different person - import anyway
-                            pass
-
-                    # Create contact data
-                    contact_data = {
-                        "name": name,
-                        "company": company if company else None,
-                        "role": position if position else None,
-                        "email": email if email else None,
-                        "linkedin_url": linkedin_url if linkedin_url else None,
-                        "notes": "Imported from LinkedIn CSV",
-                    }
-
-                    # Connected On date if available
-                    connected_on = row.get("Connected On", "")
-                    if connected_on:
-                        try:
-                            event_date = datetime.strptime(connected_on, "%d %b %Y")
-                            contact_data["event_date"] = event_date.date()
-                            contact_data["event"] = "LinkedIn Connection"
-                        except ValueError:
-                            pass
-
-                    await contact_service.create_contact(db_user.id, contact_data)
-                    imported += 1
-
-                except Exception as e:
-                    logger.error(f"Error importing row: {e}")
-                    errors.append(str(e))
+            csv_service = CSVImportService(session)
+            imported, skipped, errors = await csv_service.import_linkedin_csv(db_user.id, content)
 
             # Summary
             summary = f"✅ *Импорт завершён!*\n\n"

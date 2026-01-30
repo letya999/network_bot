@@ -8,7 +8,7 @@ from telegram.error import BadRequest
 
 @pytest.fixture(autouse=True)
 def mock_match_notify():
-    with patch("app.bot.match_handlers.notify_match_if_any", AsyncMock()) as mock:
+    with patch("app.bot.handlers.match_handlers.notify_match_if_any", AsyncMock()) as mock:
         yield mock
 
 def assert_msg_contains(mock_reply_text, substring):
@@ -25,7 +25,7 @@ async def test_handle_text_contact_creation(mock_update, mock_context):
     mock_data = {"name": "John Doe", "telegram_username": "johndoe"}
     
     with patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value=mock_data)), \
-         patch("app.bot.handlers.contact.extract_contact_info", return_value={"telegram_username": "johndoe"}), \
+         patch("app.bot.handlers.contact_handlers.extract_contact_info", return_value={"telegram_username": "johndoe"}), \
          patch("app.services.contact_service.ContactService.find_by_identifiers", AsyncMock(return_value=None)), \
          patch("app.services.contact_service.ContactService.create_contact", AsyncMock(return_value=Contact(**mock_data))):
         

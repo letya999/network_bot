@@ -3,7 +3,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from app.services.notion_service import NotionService
 from app.services.sheets_service import SheetsService
-from app.bot.integration_handlers import sync_command, export_contact_callback
+from app.bot.handlers.integration_handlers import sync_command, export_contact_callback
 from app.models.contact import Contact
 
 # -----------------------------------------------------------------------------
@@ -132,10 +132,10 @@ async def test_sync_command_notion(mock_update, mock_context):
     mock_update.effective_message = mock_update.message
     
     # Mock mocks
-    with patch("app.bot.integration_handlers.AsyncSessionLocal"), \
-         patch("app.bot.integration_handlers.UserService") as MockUserSvc, \
-         patch("app.bot.integration_handlers.ContactService") as MockContactSvc, \
-         patch("app.bot.integration_handlers.NotionService") as MockNotionSvc:
+    with patch("app.bot.handlers.integration_handlers.AsyncSessionLocal"), \
+         patch("app.bot.handlers.integration_handlers.UserService") as MockUserSvc, \
+         patch("app.bot.handlers.integration_handlers.ContactService") as MockContactSvc, \
+         patch("app.bot.handlers.integration_handlers.NotionService") as MockNotionSvc:
          
         # Ensure the instance method is an AsyncMock
         mock_notion_instance = MockNotionSvc.return_value
@@ -167,8 +167,8 @@ async def test_export_callback_flow(mock_update, mock_context):
     
     mock_session = AsyncMock()
     
-    with patch("app.bot.integration_handlers.AsyncSessionLocal", return_value=mock_session), \
-         patch("app.bot.integration_handlers.NotionService") as MockNotionSvc:
+    with patch("app.bot.handlers.integration_handlers.AsyncSessionLocal", return_value=mock_session), \
+         patch("app.bot.handlers.integration_handlers.NotionService") as MockNotionSvc:
         
         mock_session.__aenter__.return_value = mock_session
         

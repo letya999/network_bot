@@ -1,7 +1,7 @@
 
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
+from telegram.ext import ContextTypes, Application, CommandHandler
 from app.bot.handlers.menu_handlers import MAIN_MENU
 
 logger = logging.getLogger(__name__)
@@ -82,3 +82,9 @@ async def faq_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.callback_query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Назад", callback_data=MAIN_MENU)]]))
     else:
         await update.message.reply_text(text, parse_mode="HTML")
+
+
+def register_handlers(app: Application):
+    """Register info handlers."""
+    app.add_handler(CommandHandler("start", start_info))
+    app.add_handler(CommandHandler("faq", faq_command))

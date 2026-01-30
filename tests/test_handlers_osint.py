@@ -4,7 +4,7 @@ import pytest
 import uuid
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.bot.osint_handlers import (
+from app.bot.handlers.osint_handlers import (
     enrich_command, enrich_callback, show_osint_data,
     start_import, handle_csv_import, enrichment_stats, batch_enrich_callback
 )
@@ -57,7 +57,7 @@ def mock_osint_service():
 @pytest.fixture(autouse=True)
 def mock_rate_limit():
     """Mock rate limiter to always allow."""
-    with patch("app.bot.osint_handlers.rate_limit_middleware", new_callable=AsyncMock) as mock:
+    with patch("app.bot.handlers.osint_handlers.rate_limit_middleware", new_callable=AsyncMock) as mock:
         mock.return_value = True
         yield mock
 
@@ -84,13 +84,13 @@ class TestEnrichCommand:
         mock_context.args = ["NotExisting"]
 
         # Mock user service
-        with patch("app.bot.osint_handlers.UserService") as MockUserService:
+        with patch("app.bot.handlers.osint_handlers.UserService") as MockUserService:
             mock_user_svc = MagicMock()
             mock_user_svc.get_or_create_user = AsyncMock(return_value=mock_db_user)
             MockUserService.return_value = mock_user_svc
 
             # Mock contact service - no contacts found
-            with patch("app.bot.osint_handlers.ContactService") as MockContactService:
+            with patch("app.bot.handlers.osint_handlers.ContactService") as MockContactService:
                 mock_contact_svc = MagicMock()
                 mock_contact_svc.find_contacts = AsyncMock(return_value=[])
                 MockContactService.return_value = mock_contact_svc
@@ -112,12 +112,12 @@ class TestEnrichCommand:
         contact2.name = "Test User 2"
         contact2.company = "Other Corp"
 
-        with patch("app.bot.osint_handlers.UserService") as MockUserService:
+        with patch("app.bot.handlers.osint_handlers.UserService") as MockUserService:
             mock_user_svc = MagicMock()
             mock_user_svc.get_or_create_user = AsyncMock(return_value=mock_db_user)
             MockUserService.return_value = mock_user_svc
 
-            with patch("app.bot.osint_handlers.ContactService") as MockContactService:
+            with patch("app.bot.handlers.osint_handlers.ContactService") as MockContactService:
                 mock_contact_svc = MagicMock()
                 mock_contact_svc.find_contacts = AsyncMock(return_value=[mock_contact, contact2])
                 MockContactService.return_value = mock_contact_svc
@@ -137,12 +137,12 @@ class TestEnrichCallback:
         """Should show success message after enrichment."""
         mock_update.callback_query.data = f"enrich_{mock_contact.id}"
 
-        with patch("app.bot.osint_handlers.UserService") as MockUserService:
+        with patch("app.bot.handlers.osint_handlers.UserService") as MockUserService:
             mock_user_svc = MagicMock()
             mock_user_svc.get_or_create_user = AsyncMock(return_value=mock_db_user)
             MockUserService.return_value = mock_user_svc
 
-            with patch("app.bot.osint_handlers.OSINTService") as MockOSINT:
+            with patch("app.bot.handlers.osint_handlers.OSINTService") as MockOSINT:
                 mock_osint = MagicMock()
                 mock_osint.enrich_contact = AsyncMock(return_value={
                     "status": "success",
@@ -168,12 +168,12 @@ class TestShowOSINTData:
         mock_context.args = ["Test"]
         mock_contact.osint_data = None
 
-        with patch("app.bot.osint_handlers.UserService") as MockUserService:
+        with patch("app.bot.handlers.osint_handlers.UserService") as MockUserService:
             mock_user_svc = MagicMock()
             mock_user_svc.get_or_create_user = AsyncMock(return_value=mock_db_user)
             MockUserService.return_value = mock_user_svc
 
-            with patch("app.bot.osint_handlers.ContactService") as MockContactService:
+            with patch("app.bot.handlers.osint_handlers.ContactService") as MockContactService:
                 mock_contact_svc = MagicMock()
                 mock_contact_svc.find_contacts = AsyncMock(return_value=[mock_contact])
                 MockContactService.return_value = mock_contact_svc
@@ -207,12 +207,12 @@ class TestEnrichmentStats:
     @pytest.mark.asyncio
     async def test_enrichment_stats_display(self, mock_update, mock_context, mock_async_session_local, mock_db_user, mock_osint_service):
         """Should display enrichment statistics."""
-        with patch("app.bot.osint_handlers.UserService") as MockUserService:
+        with patch("app.bot.handlers.osint_handlers.UserService") as MockUserService:
             mock_user_svc = MagicMock()
             mock_user_svc.get_or_create_user = AsyncMock(return_value=mock_db_user)
             MockUserService.return_value = mock_user_svc
 
-            with patch("app.bot.osint_handlers.OSINTService") as MockOSINT:
+            with patch("app.bot.handlers.osint_handlers.OSINTService") as MockOSINT:
                 MockOSINT.return_value = mock_osint_service
 
                 await enrichment_stats(mock_update, mock_context)
@@ -231,12 +231,12 @@ class TestBatchEnrichCallback:
         """Should trigger batch enrichment."""
         mock_update.callback_query.data = "batch_enrich"
 
-        with patch("app.bot.osint_handlers.UserService") as MockUserService:
+        with patch("app.bot.handlers.osint_handlers.UserService") as MockUserService:
             mock_user_svc = MagicMock()
             mock_user_svc.get_or_create_user = AsyncMock(return_value=mock_db_user)
             MockUserService.return_value = mock_user_svc
 
-            with patch("app.bot.osint_handlers.OSINTService") as MockOSINT:
+            with patch("app.bot.handlers.osint_handlers.OSINTService") as MockOSINT:
                 MockOSINT.return_value = mock_osint_service
 
                 await batch_enrich_callback(mock_update, mock_context)
