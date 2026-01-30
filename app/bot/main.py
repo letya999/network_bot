@@ -9,6 +9,7 @@ from app.bot.handlers import (
     show_prompt, start_edit_prompt, save_prompt, cancel_prompt_edit, reset_prompt, WAITING_FOR_PROMPT,
     generate_card_callback, card_pitch_selection_callback, set_event_mode
 )
+from app.bot.handlers.info_handlers import start_info, faq_command
 from app.bot.profile_handlers import (
     show_profile, handle_edit_callback, save_profile_value, cancel_edit, 
     SELECT_FIELD, INPUT_VALUE, INPUT_CONTACT_LABEL, INPUT_CONTACT_VALUE,
@@ -106,6 +107,8 @@ async def route_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return await show_stats(update, context)
     elif cmd == "event":
         return await set_event_mode(update, context)
+    elif cmd == "faq":
+        return await faq_command(update, context)
         
     await query.answer("Опция в разработке...")
 
@@ -118,10 +121,12 @@ async def post_init(application):
     """
     bot = application.bot
     commands = [
-        BotCommand("start", "🏠 Главное меню"),
+        BotCommand("start", "🚀 Старт / О боте"),
+        BotCommand("main", "🏠 Главное меню"),
         BotCommand("profile", "👤 Мой профиль"),
         BotCommand("materials", "📂 Мои материалы"),
         BotCommand("networking", "🤝 Нетворкинг"),
+        BotCommand("faq", "📚 FAQ / Инструкция"),
         BotCommand("tools", "🛠 Инструменты"),
         BotCommand("settings", "⚙️ Настройки"),
     ]
@@ -186,10 +191,12 @@ def create_bot():
     # Log all updates
     app.add_handler(TypeHandler(Update, log_update), group=-1)
     
-    # Override /start to use new menu
-    app.add_handler(CommandHandler("start", start_menu))
+    # Override /start to use new info handler
+    app.add_handler(CommandHandler("start", start_info))
     
     # Standard Commands
+    app.add_handler(CommandHandler("main", start_menu))
+    app.add_handler(CommandHandler("faq", faq_command))
     app.add_handler(CommandHandler("menu", start_menu))
     app.add_handler(CommandHandler("list", list_contacts))
     app.add_handler(CommandHandler("find", semantic_search_handler)) # Keep semantic search on /find
