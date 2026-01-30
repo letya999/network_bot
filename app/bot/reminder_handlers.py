@@ -41,7 +41,11 @@ async def list_reminders(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard.append([
                 InlineKeyboardButton(f"✅ Готово: {r.title[:15]}...", callback_data=f"rem_done_{r.id}")
             ])
-            
+        
+        # Add Back button
+        from app.bot.handlers.menu_handlers import NETWORKING_MENU
+        keyboard.append([InlineKeyboardButton("⬅️ Назад", callback_data=NETWORKING_MENU)])
+
         await update.effective_message.reply_text(text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def reminder_action_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

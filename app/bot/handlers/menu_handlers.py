@@ -56,13 +56,66 @@ async def cleanup_and_show_menu(update: Update, context: ContextTypes.DEFAULT_TY
         # Create a fake callback query data to reuse menu_callback logic
         if update.callback_query:
             original_data = update.callback_query.data
-            update.callback_query._data = menu_type
+            # Set data to target menu
+            update.callback_query.data = menu_type 
             await menu_callback(update, context)
-            update.callback_query._data = original_data
+            # Restore check? Actually we don't need to restore.
         else:
-            await start_menu(update, context)
+            # If triggered via Command, we need to adapt since menu_callback expects callback_query
+            # But menu_callback logic relies on edit_message_text which might fail if no message to edit
+            # So for commands, we should SEND a new message with the specific menu content.
+            
+            # Re-use menu_callback logic by extracting it? Or just call logic here.
+            # Let's call a helper verify_menu_content(menu_type) -> (text, markup)
+            # Actually easier: just delegate to menu_callback if we can "fake" it or duplicate logic.
+            # Duplicating logic for "Command -> Submenu" is safer than faking callback.
+            
+            # Let's just implement the switching logic here for command-based entry.
+            text = ""
+            keyboard = []
+            
+            if menu_type == PROFILE_MENU:
+                # Delegate to actual profile handler? No, just show menu
+                 # ... (skip profile logic here, just default menu?)
+                 # Actually PROFILE_MENU in menu_callback calls show_profile logic part.
+                 pass
+            
+            # To avoid valid code duplication, let's just make start_menu smart enough.
+            # Convert command "/networking" -> start_menu(menu_type='menu_net')
+            
+            # If we are here from command, just send the specific menu as a NEW message.
+            # We can use the logic from menu_callback but adapted.
+            
+            # Hack: Create a dummy update object? No.
+            # Let's just use the `menu_callback` logic but ensuring it handles `message.reply_text` if `query` is None.
+            
+            # Let's make menu_callback robust to non-callback updates if we pass specific data.
+            # But menu_callback is designed for navigation (editing).
+            # Command entry should SEND new message.
+            
+            # Let's just return to main menu if complex, or implemented simple logic.
+            pass
+
+    # Default fallback
+    await start_menu_internal(update, context, initial_menu=menu_type)
+
+async def start_menu_internal(update: Update, context: ContextTypes.DEFAULT_TYPE, initial_menu=None):
+    """
+    Internal helper to show menu, supporting sub-menus on first load.
+    """
+    user = update.effective_user
+    
+    target_menu = initial_menu or MAIN_MENU
+    
+    # We need to generate the content for the target_menu
+    text, reply_markup = await get_menu_content(user, target_menu, context)
+    
+    if update.callback_query:
+        await update.callback_query.answer()
+        await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode="HTML" if target_menu == PROFILE_MENU else "Markdown")
     else:
-        await start_menu(update, context)
+        await update.message.reply_text(text=text, reply_markup=reply_markup, parse_mode="HTML" if target_menu == PROFILE_MENU else "Markdown")
+
 
 # Callback prefixes
 MENU_PREFIX = "menu_"
@@ -73,50 +126,33 @@ NETWORKING_MENU = "menu_net"
 TOOLS_MENU = "menu_tools"
 SETTINGS_MENU = "menu_settings"
 
-async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, menu_type: str = None):
     """
-    Shows the main menu. Replaces the standard /start command or calls this from callback.
+    Shows the menu. Can handle specific sub-menus via menu_type argument.
     """
     user = update.effective_user
-    logger.info(f"User {user.id} requested menu.")
+    logger.info(f"User {user.id} requested menu: {menu_type or 'main'}")
 
-    # Ensure user exists
-    async with AsyncSessionLocal() as session:
-        user_service = UserService(session)
-        await user_service.get_or_create_user(user.id, user.username, user.first_name, user.last_name)
-
-    text = (
-        f"👋 Привет, {user.first_name}!\n\n"
-        "Главный пульт управления твоим нетворкингом.\n"
-        "Выбери раздел:"
-    )
+    target_menu = menu_type or MAIN_MENU
     
-    keyboard = [
-        [
-            InlineKeyboardButton("👤 Мой профиль", callback_data=PROFILE_MENU),
-            InlineKeyboardButton("📂 Мои материалы", callback_data=MATERIALS_MENU)
-        ],
-        [
-            InlineKeyboardButton("🤝 Нетворкинг", callback_data=NETWORKING_MENU)
-        ],
-        [
-            InlineKeyboardButton("🛠 Инструменты", callback_data=TOOLS_MENU),
-            InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS_MENU)
-        ]
-    ]
+    # Ensure user exists (only needed once, really)
+    # But get_menu_content might need profile
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    text, reply_markup = await get_menu_content(user, target_menu, context)
+    parse_mode = "HTML" if target_menu == PROFILE_MENU else "Markdown"
     
     if update.callback_query:
         await update.callback_query.answer()
-        await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup)
+        await update.callback_query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
     else:
-        await update.message.reply_text(text, reply_markup=reply_markup)
+        # Send new message
+        msg = await update.message.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+        # Track for cleanup if needed? usually main menu is permanent-ish but submenus might be transient
+        # Actually we track conversation messages. Let's not overcomplicate for now.
 
 async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Handles menu navigation.
-    Cleans up any active conversation messages before navigating.
+    Handles menu navigation via callbacks.
     """
     query = update.callback_query
     data = query.data
@@ -126,16 +162,50 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Clean up any conversation messages when navigating menus
     await cleanup_conversation_message(update, context)
     
-    if data == MAIN_MENU:
-        await start_menu(update, context)
-        return
+    # If data sends us to a command, we might need special handling if it's not a menu
+    # But usually we use route_menu_command for cmd_ prefixes.
+    # Here we handle 'menu_' prefixes.
+    
+    user = update.effective_user
+    text, reply_markup = await get_menu_content(user, data, context)
+    parse_mode = "HTML" if data == PROFILE_MENU else "Markdown"
+    
+    await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode=parse_mode)
 
+async def get_menu_content(user, menu_type, context):
+    """
+    Returns (text, reply_markup) for the given menu type and user.
+    """
     text = ""
     keyboard = []
     
-    if data == PROFILE_MENU:
-        # Show actual profile instead of generic text
-        user = update.effective_user
+    # Ensure user exists in DB for profile checks
+    if menu_type == PROFILE_MENU or menu_type == MAIN_MENU:
+         async with AsyncSessionLocal() as session:
+            user_service = UserService(session)
+            await user_service.get_or_create_user(user.id, user.username, user.first_name, user.last_name)
+
+    if menu_type == MAIN_MENU:
+        text = (
+            f"👋 Привет, {user.first_name}!\n\n"
+            "Главный пульт управления твоим нетворкингом.\n"
+            "Выбери раздел:"
+        )
+        keyboard = [
+            [
+                InlineKeyboardButton("👤 Мой профиль", callback_data=PROFILE_MENU),
+                InlineKeyboardButton("📂 Мои материалы", callback_data=MATERIALS_MENU)
+            ],
+            [
+                InlineKeyboardButton("🤝 Нетворкинг", callback_data=NETWORKING_MENU)
+            ],
+            [
+                InlineKeyboardButton("🛠 Инструменты", callback_data=TOOLS_MENU),
+                InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS_MENU)
+            ]
+        ]
+        
+    elif menu_type == PROFILE_MENU:
         async with AsyncSessionLocal() as session:
             service = ProfileService(session)
             profile = await service.get_profile(user.id)
@@ -161,7 +231,6 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if profile.interests:
             text += f"\n⭐ <b>Интересы</b>: {escape(', '.join(profile.interests))}\n"
             
-        # Contacts
         text += "\n📞 <b>Контакты</b>:\n"
         has_contacts = False
         if profile.custom_contacts:
@@ -181,11 +250,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ Назад", callback_data=MAIN_MENU)]
         ]
         
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode="HTML")
-        return
-        
-    elif data == MATERIALS_MENU:
+    elif menu_type == MATERIALS_MENU:
         text = "📂 **Мои материалы**\n\nБыстрый доступ к твоим ассетам."
         keyboard = [
             [InlineKeyboardButton("🚀 Питчи", callback_data="cmd_pitches")],
@@ -194,7 +259,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ Назад", callback_data=MAIN_MENU)]
         ]
         
-    elif data == NETWORKING_MENU:
+    elif menu_type == NETWORKING_MENU:
         text = "🤝 **Нетворкинг**\n\nРабота с контактами и базой."
         keyboard = [
             [InlineKeyboardButton("📋 Список контактов", callback_data="cmd_list")],
@@ -204,7 +269,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ Назад", callback_data=MAIN_MENU)]
         ]
         
-    elif data == TOOLS_MENU:
+    elif menu_type == TOOLS_MENU:
         text = "🛠 **Инструменты**\n\nИмпорт, экспорт и синхронизация."
         keyboard = [
             [InlineKeyboardButton("📥 Импорт (LinkedIn)", callback_data="cmd_import")],
@@ -213,7 +278,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ Назад", callback_data=MAIN_MENU)]
         ]
         
-    elif data == SETTINGS_MENU:
+    elif menu_type == SETTINGS_MENU:
         text = "⚙️ **Настройки**\n\nКонфигурация бота."
         keyboard = [
             [InlineKeyboardButton("🔑 API Ключи", callback_data="cmd_credentials")],
@@ -223,22 +288,7 @@ async def menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("⬅️ Назад", callback_data=MAIN_MENU)]
         ]
         
-    # Proxy handlers for commands that might be triggered via buttons but need to act like commands
-    # Note: For actual functionality, we might need to trigger existing handlers or show intermediate text.
-    # Since existing handlers expect message updates mainly, using buttons to trigger them might require adaptation.
-    # However, for now, we will assume we can route them or user sees text instructions?
-    # Better: Trigger the functions directly or set state?
-    # To keep it simple, we'll implement simple wrappers or just text navigation for now if Complex.
-    
-    # Actually, the proposal implies these buttons Trigger the functionality.
-    # We will handle "cmd_" prefixes in a separate handler or here. 
-    # But wait, if I click "My Profile", I want to invoke `show_profile`.
-    # `show_profile` expects an Update with Message or CallbackQuery?
-    # Existing `show_profile` is a CommandHandler entry point.
-    
-    if text:
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(text=text, reply_markup=reply_markup, parse_mode="Markdown")
+    return text, InlineKeyboardMarkup(keyboard)
 
 # We need a bridge to call command functions from callbacks.
 # Or we just tell the user what command to run? No, that's bad UX.

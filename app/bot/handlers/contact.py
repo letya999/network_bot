@@ -75,6 +75,11 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
             
             data = await gemini.extract_contact_data(audio_path=file_path, prompt_template=db_user.custom_prompt)
+            
+            if data.get("error"):
+                 await status_msg.edit_text(f"❌ Ошибка обработки (возможен лимит AI): {data.get('error')}")
+                 return
+
             _apply_event_context(data, context)
             
             merge_service = ContactMergeService(session)
@@ -132,7 +137,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 card = format_card(contact)
                 keyboard = get_contact_keyboard(contact)
                 await update.message.reply_text(
-                    card, parse_mode="Markdown", reply_markup=keyboard,
+                    card, parse_mode="HTML", reply_markup=keyboard,
                     disable_web_page_preview=True
                 )
 
@@ -197,7 +202,7 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         card = format_card(contact)
         keyboard = get_contact_keyboard(contact)
         await update.message.reply_text(
-            card, parse_mode="Markdown", reply_markup=keyboard,
+            card, parse_mode="HTML", reply_markup=keyboard,
             disable_web_page_preview=True
         )
 
@@ -235,6 +240,32 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         gemini = GeminiService()
         data = await gemini.extract_contact_data(text=text, prompt_template=db_user.custom_prompt)
+        
+        # Check for Critical API Errors (e.g. Quota Exceeded)
+        if data.get("error"):
+            error_msg = data.get("error")
+            if regex_data:
+                data = regex_data
+                # Ensure minimal fields
+                if "name" not in data:
+                    data["name"] = "Новый контакт"
+                data["notes"] = f"⚠️ Получено при сбое AI: {text[:50]}..."
+                
+                await update.message.reply_text(
+                    f"⚠️ <b>Лимит AI исчерпан или сбой.</b>\n"
+                    f"Сохраняю то, что удалось извлечь через шаблоны (Regex).\n"
+                    f"Ошибка: {error_msg}",
+                    parse_mode="HTML"
+                )
+            else:
+                await update.message.reply_text(
+                    f"⏳ <b>Лимит AI исчерпан (20 запросов/мин)</b> или произошла ошибка.\n"
+                    f"Пожалуйста, подождите минуту и попробуйте снова.\n"
+                    f"Никаких контактов в тексте не найдено шаблонами.\n\n"
+                    f"Ошибка: {error_msg}",
+                    parse_mode="HTML"
+                )
+                return
         
         # Merge manual regex data if Gemini missed it
         for key in ['telegram_username', 'phone']:
@@ -433,7 +464,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     card = format_card(updated_contact)
                     keyboard = get_contact_keyboard(updated_contact)
                     await update.message.reply_text(
-                        card, parse_mode="Markdown", reply_markup=keyboard,
+                        card, parse_mode="HTML", reply_markup=keyboard,
                         disable_web_page_preview=True
                     )
                     return
@@ -490,6 +521,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         card = format_card(contact)
         keyboard = get_contact_keyboard(contact)
         await update.message.reply_text(
-            card, parse_mode="Markdown", reply_markup=keyboard,
+            card, parse_mode="HTML", reply_markup=keyboard,
             disable_web_page_preview=True
         )

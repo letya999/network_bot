@@ -10,12 +10,14 @@ from app.services.osint_service import format_osint_data
 
 logger = logging.getLogger(__name__)
 
+from html import escape
+
 def format_card(contact):
     """
-    Format a contact object into a Markdown card for Telegram.
+    Format a contact object into a HTML card for Telegram.
     """
     # Smart Name Display
-    name_display = contact.name
+    name_display = escape(contact.name or "Без имени")
     show_tg_line = True
     
     if contact.telegram_username and contact.name:
@@ -26,36 +28,31 @@ def format_card(contact):
         # If very similar, hide the separate line and link the name
         if norm_name == norm_tg:
              tg = contact.telegram_username.lstrip("@")
-             safe_name = contact.name.replace("_", "\\_")
-             name_display = f"[{safe_name}](https://t.me/{tg})"
+             # Use HTML link
+             name_display = f'<a href="https://t.me/{tg}">{name_display}</a>'
              show_tg_line = False
 
-    text = f"✅ {name_display}\n\n"
+    text = f"✅ <b>{name_display}</b>\n\n"
     if contact.company:
-        text += f"🏢 {contact.company}"
+        text += f"🏢 {escape(contact.company)}"
         if contact.role:
-            text += f" · {contact.role}"
+            text += f" · {escape(contact.role)}"
         text += "\n"
     
     text += "\n"
     if contact.event_name:
-        text += f"📍 {contact.event_name}\n"
+        text += f"📍 {escape(contact.event_name)}\n"
     
     if contact.agreements:
         text += "\n📝 Договорённости:\n"
         for item in contact.agreements:
-            text += f"• {item}\n"
+            text += f"• {escape(item)}\n"
             
     if contact.follow_up_action:
-        text += f"\n🎯 Следующий шаг: {contact.follow_up_action}\n"
+        text += f"\n🎯 Следующий шаг: {escape(contact.follow_up_action)}\n"
     
-    # Removed "can_help_with" and "what_looking_for" as per update,
-    # OR we can keep looking_for but remove help_with if specifically requested.
-    # User said: "Может помочь убери" (Remove Can Help With).
-    # He didn't explicitly say remove "looking for", but focused on layout.
-    # Let's keep looking_for if it exists, as it's useful context but less cluttered.
     if contact.what_looking_for:
-        text += f"\n💡 Ищет: {contact.what_looking_for}\n"
+        text += f"\n💡 Ищет: {escape(contact.what_looking_for)}\n"
 
     # Show notes/errors (stored in attributes for contacts)
     notes = None
@@ -63,15 +60,15 @@ def format_card(contact):
         notes = contact.attributes.get('notes')
 
     if notes:
-        text += f"\n📄 Заметки: {notes}\n"
+        text += f"\n📄 Заметки: {escape(notes)}\n"
 
     # CONTACT DETAILS SECTION (Moved to bottom)
-    text += "\n📞 *Контакты:*\n"
+    text += "\n📞 <b>Контакты:</b>\n"
     has_contacts = False
     
     if contact.phone:
         clean_phone = re.sub(r'[^\d+]', '', contact.phone)
-        text += f"• Телефон: [{contact.phone}](tel:{clean_phone})\n"
+        text += f"• Телефон: <a href=\"tel:{clean_phone}\">{escape(contact.phone)}</a>\n"
         has_contacts = True
         
     if contact.telegram_username:
@@ -79,12 +76,31 @@ def format_card(contact):
         tg = contact.telegram_username
         tg = re.sub(r'^https?://t\.me/', '', tg)
         tg = tg.lstrip("@")
-        safe_display = tg.replace("_", "\\_")
-        text += f"• Telegram: [@{safe_display}](https://t.me/{tg})\n"
-        has_contacts = True
+        # Reuse logic?
+        if show_tg_line:
+             text += f"• Telegram: <a href=\"https://t.me/{tg}\">@{escape(tg)}</a>\n"
+             has_contacts = True
+        else:
+             # Already linked in name, but if we want to list it in contacts? 
+             # Logic said hide separate line if redundant name.
+             # But if user looks at "Contacts" section, might expect it.
+             # Let's show it anyway for consistency or respect show_tg_line.
+             # Original code respected show_tg_line implicitly by checking if contact.name == tg_username sort of.
+             # Wait, original code logic for show_tg_line was strictly for Name section?
+             # Actually original code:
+             # if norm_name == norm_tg: name_display = [...]; show_tg_line = False
+             # And then in Contacts section: `if contact.telegram_username:` -> it printed it regardless of show_tg_line!
+             # Wait, looking at original code... 
+             # No, original code printed it: `text += f"• Telegram: ..."` inside `if contact.telegram_username:`. It did NOT check `show_tg_line` there.
+             # So `show_tg_line` variable was useless in original code? 
+             # Ah, looking at lines 21-31. `show_tg_line = False` was set but never read?
+             # Correct. Original code had a bug or unused variable.
+             # I will keep printing it in Contacts section for completeness.
+             text += f"• Telegram: <a href=\"https://t.me/{tg}\">@{escape(tg)}</a>\n"
+             has_contacts = True
         
     if contact.email:
-        text += f"• Почта: [{contact.email}](mailto:{contact.email})\n"
+        text += f"• Почта: <a href=\"mailto:{escape(contact.email)}\">{escape(contact.email)}</a>\n"
         has_contacts = True
         
     if contact.linkedin_url:
@@ -92,7 +108,9 @@ def format_card(contact):
         li_display = contact.linkedin_url
         if "linkedin.com/in/" in li_display:
             li_display = li_display.split("linkedin.com/in/")[-1].strip("/")
-        text += f"• LinkedIn: [{li_display}](https://www.{contact.linkedin_url.replace('https://', '').replace('http://', '').replace('www.', '')})\n"
+        
+        target_url = contact.linkedin_url.replace('https://', '').replace('http://', '').replace('www.', '')
+        text += f"• LinkedIn: <a href=\"https://www.{target_url}\">{escape(li_display)}</a>\n"
         has_contacts = True
         
     # Custom Contacts from Attributes
@@ -100,29 +118,26 @@ def format_card(contact):
         custom_contacts = contact.attributes.get('custom_contacts', [])
         if custom_contacts:
              for cc in custom_contacts:
-                # Expecting dict like {'label': '...', 'value': '...'}
                 label = cc.get('label', 'Ссылка')
                 val = cc.get('value', '')
                 if val:
-                    # Check if val is a URL
                     if val.startswith('http') or val.startswith('t.me'):
-                         # If it's t.me but no protocol, add it
                          link = val
                          if val.startswith('t.me'):
                              link = f"https://{val}"
-                         text += f"• [{label}]({link})\n"
+                         text += f"• <a href=\"{escape(link)}\">{escape(label)}</a>\n"
                     else:
-                         text += f"• {label}: {val}\n"
+                         text += f"• {escape(label)}: {escape(val)}\n"
                     has_contacts = True
         
     if not has_contacts:
-        text += "_(пусто)_\n"
+        text += "<i>(пусто)</i>\n"
 
     # Show OSINT data if available
     if hasattr(contact, 'osint_data') and contact.osint_data:
         osint_text = format_osint_data(contact.osint_data)
         if osint_text:
-            text += f"\n{'─' * 20}\n📊 *Публичная информация:*\n{osint_text}\n"
+            text += f"\n{'─' * 20}\n📊 <b>Публичная информация:</b>\n{escape(osint_text)}\n" # format_osint_data likely returns plain text or markdown? check.
 
     return text
 

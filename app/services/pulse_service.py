@@ -117,32 +117,42 @@ class PulseService:
         Returns:
             Formatted message with suggestions
         """
+        from html import escape
         if not existing_contacts:
             return ""
         
-        message = f"🔗 *Триангуляция обнаружена!*\n\n"
-        message += f"Вы добавили *{new_contact.name}* из компании *{new_contact.company}*.\n\n"
+        message = f"🔗 <b>Триангуляция обнаружена!</b>\n\n"
+        company_esc = escape(new_contact.company or "")
+        name_esc = escape(new_contact.name or "")
+        message += f"Вы добавили <b>{name_esc}</b> из компании <b>{company_esc}</b>.\n\n"
         
         if len(existing_contacts) == 1:
             old = existing_contacts[0]
+            old_name_esc = escape(old.name or "")
             message += f"У вас уже есть контакт из этой компании:\n"
-            message += f"👤 *{old.name}*"
+            message += f"👤 <b>{old_name_esc}</b>"
             if old.role:
-                message += f" ({old.role})"
+                message += f" ({escape(old.role)})"
             message += "\n\n"
-            message += f"💡 *Повод написать:*\n"
-            message += f"_\"Привет, {old.name.split()[0]}! Тут познакомился с твоим коллегой "
-            message += f"{new_contact.name.split()[0]}, вспомнил про тебя. Как дела?\"_"
+            message += f"💡 <b>Повод написать:</b>\n"
+            
+            # Safe splitting
+            old_first = old.name.split()[0] if old.name else "Old"
+            new_first = new_contact.name.split()[0] if new_contact.name else "New"
+            
+            message += f"<i>\"Привет, {escape(old_first)}! Тут познакомился с твоим коллегой "
+            message += f"{escape(new_first)}, вспомнил про тебя. Как дела?\"</i>"
         else:
             message += f"У вас уже есть {len(existing_contacts)} контакт(а/ов) из этой компании:\n\n"
             for old in existing_contacts[:3]:  # Show max 3
-                message += f"👤 *{old.name}*"
+                old_name_esc = escape(old.name or "")
+                message += f"👤 <b>{old_name_esc}</b>"
                 if old.role:
-                    message += f" — {old.role}"
+                    message += f" — {escape(old.role)}"
                 message += "\n"
             
             if len(existing_contacts) > 3:
-                message += f"_...и ещё {len(existing_contacts) - 3}_\n"
+                message += f"<i>...и ещё {len(existing_contacts) - 3}</i>\n"
             
             message += "\n💡 Это отличный повод для reconnect!"
         

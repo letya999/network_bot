@@ -88,7 +88,7 @@ class GeminiService:
             logger.info("Gemini API call successful")
         except Exception as e:
             logger.exception(f"Gemini API error: {e}")
-            return {"name": "Неизвестно", "notes": f"API error: {str(e)}"}
+            return {"name": "Неизвестно", "notes": f"API error: {str(e)}", "error": str(e)}
 
         # Parse JSON
         try:
@@ -114,7 +114,8 @@ class GeminiService:
             logger.exception(f"Error parsing Gemini response: {e}")
             return {
                 "name": "Неизвестно",
-                "notes": f"Processing error: {str(e)}"
+                "notes": f"Processing error: {str(e)}",
+                "error": str(e)
             }
 
     async def customize_card_intro(self, user_profile: str, target_contact: str) -> Dict[str, str]:
@@ -142,13 +143,15 @@ class GeminiService:
         - No emojis. No subjects lines. No lists.
         
         Task 2: Strategy Advice
-        Based on our profiles, suggest what specific links, assets, or topics I should send differently or as a follow-up. 
-        Briefly explain WHY this approach fits our role dynamic.
+        Based on our profiles and the message tone, suggest SPECIFIC follow-up actions.
+        - Recommend EXACTLY which materials to send next (e.g., "Send your Portfolio link", "Attach the Pitch Deck", "Link to specific case study on website").
+        - Explain WHY this material fits the recipient's role/interest.
+        - e.g., "Since they are a technical lead, send your GitHub or technical documentation link."
         
         Output JSON:
         {{
             "message": "The text message string",
-            "strategy": "Your advice on what else to send or how to approach"
+            "strategy": "Your specific advice on what materials/links to send next and why."
         }}
         """
         

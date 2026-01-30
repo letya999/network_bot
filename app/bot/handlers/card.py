@@ -131,7 +131,15 @@ async def _generate_and_send_card(
     status_msg = await message.reply_text("⏳ Читаю профили и придумываю интро...")
     
     try:
-        gemini = GeminiService()
+        # Load user settings for API key
+        async with AsyncSessionLocal() as session:
+             user_service = UserService(session)
+             user = await user_service.get_user(user_telegram_id)
+             api_key = None
+             if user and user.settings:
+                 api_key = user.settings.get("gemini_api_key")
+        
+        gemini = GeminiService(api_key=api_key)
         
         # Prepare contextual information
         target_info = [f"Name: {target_contact.name}"]

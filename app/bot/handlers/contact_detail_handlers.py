@@ -37,18 +37,11 @@ async def view_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Format full card
+        # Format full card
         text = format_card(contact)
         keyboard = get_contact_keyboard(contact)
         
-        # Determine if we edit or send new. 
-        # Since we are "Viewing details" from "View Details" button which was on a card...
-        # It's basically refreshing the card but maybe with more info if format_card hides things?
-        # Actually format_card shows quite a bit.
-        # But if the user was in a list view (which is text only usually), then they click "View".
-        # If they are already viewing the card, this button might be redundant unless we have a "Short" vs "Full" view.
-        # Assume "format_card" is the full view.
-        
-        await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="Markdown", disable_web_page_preview=True)
+        await query.edit_message_text(text=text, reply_markup=keyboard, parse_mode="HTML", disable_web_page_preview=True)
 
 async def delete_contact_ask(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -115,7 +108,8 @@ async def edit_contact_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.effective_message.reply_text("❌ Контакт не найден.")
             return
 
-        text = f"✏️ **Редактирование контакта: {contact.name}**\n\nВыберите поле для изменения:"
+        from html import escape
+        text = f"✏️ <b>Редактирование контакта: {escape(contact.name)}</b>\n\nВыберите поле для изменения:"
         
         keyboard = [
             [
@@ -141,7 +135,7 @@ async def edit_contact_start(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         # Send as NEW message to keep contact card visible
-        await update.effective_message.reply_text(text=text, reply_markup=reply_markup, parse_mode="Markdown")
+        await update.effective_message.reply_text(text=text, reply_markup=reply_markup, parse_mode="HTML")
 
 async def manage_contact_contacts_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -159,7 +153,8 @@ async def manage_contact_contacts_menu(update: Update, context: ContextTypes.DEF
         contact_service = ContactService(session)
         contact = await contact_service.get_contact_by_id(contact_id)
         
-        text = f"🔗 **Контакты ({contact.name})**\n\nУправление контактами:"
+        from html import escape
+        text = f"🔗 <b>Контакты ({escape(contact.name)})</b>\n\nУправление контактами:"
         keyboard = []
         
         # Standard Fields
@@ -188,7 +183,7 @@ async def manage_contact_contacts_menu(update: Update, context: ContextTypes.DEF
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         # Send as NEW message to keep edit menu visible
-        await update.effective_message.reply_text(text=text, reply_markup=reply_markup, parse_mode="Markdown")
+        await update.effective_message.reply_text(text=text, reply_markup=reply_markup, parse_mode="HTML")
 
 async def delete_contact_field_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -247,8 +242,8 @@ async def add_contact_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text="Введите **название** для нового контакта (например: 'Мой сайт', 'LinkedIn', 'Секретный телефон'):\n\n_Нажмите /cancel для отмены_",
-        parse_mode="Markdown"
+        text="Введите <b>название</b> для нового контакта (например: 'Мой сайт', 'LinkedIn', 'Секретный телефон'):\n\n<i>Нажмите /cancel для отмены</i>",
+        parse_mode="HTML"
     )
 
 async def handle_contact_edit_field(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -278,9 +273,10 @@ async def handle_contact_edit_field(update: Update, context: ContextTypes.DEFAUL
     
     label = field_names.get(field, field)
     
+    from html import escape
     text = (
-        f"Введите новое значение для **{label}**:\n\n"
-        "_Нажмите /cancel для отмены_"
+        f"Введите новое значение для <b>{escape(label)}</b>:\n\n"
+        "<i>Нажмите /cancel для отмены</i>"
     )
     
     # Remove buttons from edit menu to keep it as reference
@@ -290,7 +286,7 @@ async def handle_contact_edit_field(update: Update, context: ContextTypes.DEFAUL
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=text,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 async def cancel_contact_edit(update: Update, context: ContextTypes.DEFAULT_TYPE):

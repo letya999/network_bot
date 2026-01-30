@@ -61,6 +61,18 @@ async def start_greetings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["current_asset_type"] = "greeting"
     return await start_assets(update, context)
 
+async def open_networking_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start_menu(update, context, menu_type=NETWORKING_MENU)
+
+async def open_tools_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start_menu(update, context, menu_type=TOOLS_MENU)
+
+async def open_settings_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start_menu(update, context, menu_type=SETTINGS_MENU)
+
+async def open_materials_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await start_menu(update, context, menu_type=MATERIALS_MENU)
+
 async def route_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Dispatcher for menu commands (start with cmd_) that are NOT conversation entry points.
@@ -107,10 +119,11 @@ async def post_init(application):
     bot = application.bot
     commands = [
         BotCommand("start", "🏠 Главное меню"),
-        BotCommand("card", "📇 Моя визитка"),
-        BotCommand("find", "🔍 Найти контакт"),
-        BotCommand("profile", "👤 Профиль"),
+        BotCommand("profile", "👤 Мой профиль"),
         BotCommand("materials", "📂 Мои материалы"),
+        BotCommand("networking", "🤝 Нетворкинг"),
+        BotCommand("tools", "🛠 Инструменты"),
+        BotCommand("settings", "⚙️ Настройки"),
     ]
     await bot.set_my_commands(commands)
     logger.info(f"Bot commands set: {commands}")
@@ -188,8 +201,29 @@ def create_bot():
     app.add_handler(CommandHandler("event", set_event_mode))
     app.add_handler(CommandHandler("sync", sync_command))
     
+    # Redirect new menu commands to start_menu (which handles submenus via args or we can dispatch)
+    # Actually, we should map them to opening specific menus if possible.
+    # start_menu accepts args? No.
+    # But we can use route_menu_command or similar.
+    # For now, let's just open the main menu or specific submenus if we had them as separate functions.
+    # Since start_menu just sends MAIN_MENU, we might want to extend it.
+    
+    # We can use a simple wrapper to open specific menus
+    async def open_networking(update, context): await start_menu(update, context, menu_type="networking")
+    async def open_tools(update, context): await start_menu(update, context, menu_type="tools")
+    async def open_settings(update, context): await start_menu(update, context, menu_type="settings")
+    
+    # But start_menu signature in menu_handlers might need update. 
+    # Let's just point them to start_menu for now, or update menu_handlers.
+    # Given the file view earlier, start_menu seemed simple.
+    # Let's just point to start_menu for simplicity as "Hub".
+    
+    app.add_handler(CommandHandler("networking", open_networking_menu))
+    app.add_handler(CommandHandler("tools", open_tools_menu))
+    app.add_handler(CommandHandler("settings", open_settings_menu))
+    
     # Materials shortcut
-    app.add_handler(CommandHandler("materials", start_menu)) # Redirects to start is fine, or improve later
+    app.add_handler(CommandHandler("materials", open_materials_menu)) 
 
     prompt_conv = ConversationHandler(
         entry_points=[CommandHandler("edit_prompt", start_edit_prompt)],
@@ -310,6 +344,7 @@ def create_bot():
     # Existing Callbacks
     app.add_handler(CallbackQueryHandler(generate_card_callback, pattern="^gen_card_"))
     app.add_handler(CallbackQueryHandler(card_pitch_selection_callback, pattern="^card_pitch_"))
+    app.add_handler(CallbackQueryHandler(find_matches_command, pattern="^matches_"))
     app.add_handler(CallbackQueryHandler(semantic_search_callback, pattern="^semantic_"))
     app.add_handler(CallbackQueryHandler(export_contact_callback, pattern="^export_"))
     app.add_handler(CallbackQueryHandler(sync_run_callback, pattern="^sync_run_"))
