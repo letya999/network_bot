@@ -5,7 +5,8 @@ import uuid
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.osint_service import OSINTService, format_osint_data
+from app.services.osint_service import OSINTService
+from app.bot.views import format_osint_data
 
 
 @pytest.fixture

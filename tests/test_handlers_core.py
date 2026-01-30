@@ -1,6 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from app.bot.handlers import list_contacts, export_contacts, format_card
+from app.bot.handlers import list_contacts, export_contacts
+from app.bot.views import format_card
 from app.bot.handlers.menu_handlers import start_menu
 from app.models.contact import Contact
 import uuid

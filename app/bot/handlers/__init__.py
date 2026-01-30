@@ -7,7 +7,7 @@ from app.bot.handlers.prompt_handlers import (
 )
 from app.bot.handlers.card_handlers import generate_card_callback, card_pitch_selection_callback
 from app.bot.handlers.event_handlers import set_event_mode
-from app.bot.handlers.common import format_card, get_contact_keyboard
+from app.bot.views import format_card, get_contact_keyboard
 
 __all__ = [
     'start',

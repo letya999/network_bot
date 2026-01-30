@@ -20,7 +20,8 @@ from telegram.ext import ContextTypes, ConversationHandler
 from app.db.session import AsyncSessionLocal
 from app.services.user_service import UserService
 from app.services.contact_service import ContactService
-from app.services.osint_service import OSINTService, format_osint_data
+from app.services.osint_service import OSINTService
+from app.bot.views import format_osint_data
 from app.models.contact import Contact
 from app.bot.rate_limiter import rate_limit_middleware
 
