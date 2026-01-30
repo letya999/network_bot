@@ -15,7 +15,7 @@ from app.services.merge_service import ContactMergeService
 from app.services.pulse_service import PulseService
 from app.utils.text_parser import extract_contact_info
 from app.bot.rate_limiter import rate_limit_middleware
-from app.bot.match_handlers import notify_match_if_any
+from app.bot.handlers.match_handlers import notify_match_if_any
 from app.bot.handlers.common import format_card, get_contact_keyboard
 import dateparser
 from datetime import datetime, timedelta

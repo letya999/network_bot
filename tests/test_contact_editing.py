@@ -3,7 +3,7 @@ Tests for contact editing functionality.
 """
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from app.bot.handlers.contact import handle_text_message
+from app.bot.handlers.contact_handlers import handle_text_message
 from app.models.contact import Contact
 import uuid
 
@@ -62,7 +62,7 @@ async def test_normal_text_creates_new_contact(mock_update, mock_context):
                AsyncMock(return_value={"name": "Иван Петров", "company": "Яндекс"})), \
          patch("app.services.merge_service.ContactMergeService.process_contact_data", 
                AsyncMock(return_value=(new_contact, False))), \
-         patch("app.bot.match_handlers.notify_match_if_any", AsyncMock()):
+         patch("app.bot.handlers.match_handlers.notify_match_if_any", AsyncMock()):
         
         await handle_text_message(mock_update, mock_context)
         

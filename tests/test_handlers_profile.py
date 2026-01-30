@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from app.bot.profile_handlers import show_profile, handle_edit_callback, save_profile_value
-from app.bot.handlers.card import generate_card_callback
+from app.bot.handlers.profile_handlers import show_profile, handle_edit_callback, save_profile_value
+from app.bot.handlers.card_handlers import generate_card_callback
 from app.models.user import User
 from app.models.contact import Contact
 import uuid
@@ -72,7 +72,7 @@ async def test_save_interests_list(mock_update, mock_context):
     mock_update.message.text = "AI, Python, Networking"
     
     with patch("app.services.profile_service.ProfileService.update_profile_field", AsyncMock()) as mock_upd:
-        with patch("app.bot.profile_handlers.show_profile", AsyncMock()):
+        with patch("app.bot.handlers.profile_handlers.show_profile", AsyncMock()):
             await save_profile_value(mock_update, mock_context)
             
             # Verify call arguments

@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from app.bot.match_handlers import find_matches_command, semantic_search_handler, semantic_search_callback
-from app.bot.analytics_handlers import show_stats
+from app.bot.handlers.match_handlers import find_matches_command, semantic_search_handler, semantic_search_callback
+from app.bot.handlers.analytics_handlers import show_stats
 from app.models.contact import Contact
 import uuid
 

@@ -10,8 +10,8 @@ from app.bot.handlers import (
     generate_card_callback, card_pitch_selection_callback, set_event_mode
 )
 from app.bot.handlers.info_handlers import start_info, faq_command
-from app.bot.profile_handlers import (
-    show_profile, handle_edit_callback, save_profile_value, cancel_edit, 
+from app.bot.handlers.profile_handlers import (
+    show_profile, handle_edit_callback, save_profile_value, cancel_edit,
     SELECT_FIELD, INPUT_VALUE, INPUT_CONTACT_LABEL, INPUT_CONTACT_VALUE,
     save_contact_label, save_contact_value, send_card, share_card
 )
@@ -32,15 +32,15 @@ from app.bot.handlers.contact_detail_handlers import (
     CONTACT_DEL_ASK_PREFIX, CONTACT_DEL_CONFIRM_PREFIX
 )
 
-from app.bot.reminder_handlers import list_reminders, reminder_action_callback
-from app.bot.analytics_handlers import show_stats
-from app.bot.match_handlers import find_matches_command, semantic_search_handler, semantic_search_callback
-from app.bot.osint_handlers import (
+from app.bot.handlers.reminder_handlers import list_reminders, reminder_action_callback
+from app.bot.handlers.analytics_handlers import show_stats
+from app.bot.handlers.match_handlers import find_matches_command, semantic_search_handler, semantic_search_callback
+from app.bot.handlers.osint_handlers import (
     enrich_command, enrich_callback, show_osint_data,
     start_import, handle_csv_import, cancel_import, WAITING_FOR_CSV,
     enrichment_stats, batch_enrich_callback
 )
-from app.bot.integration_handlers import sync_command, export_contact_callback, sync_run_callback
+from app.bot.handlers.integration_handlers import sync_command, export_contact_callback, sync_run_callback
 from app.bot.rate_limiter import rate_limiter
 from app.bot.handlers.credentials_handlers import (
     set_credentials_command, service_choice_callback, handle_input, cancel_creds,

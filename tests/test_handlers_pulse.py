@@ -1,6 +1,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from app.bot.handlers.contact import handle_voice, handle_contact, handle_text_message
+from app.bot.handlers.contact_handlers import handle_voice, handle_contact, handle_text_message
 from app.models.contact import Contact
 from app.models.user import User
 import uuid
@@ -45,12 +45,12 @@ async def test_triangulation_notification_on_voice_contact(mock_update, mock_con
     # Mock file content to simulate OGG file
     mock_file_content = b'OggS' + b'\x00' * 100
     
-    with patch("app.bot.handlers.contact.rate_limit_middleware", AsyncMock(return_value=True)), \
-         patch("app.bot.handlers.contact.UserService") as MockUserSvc, \
-         patch("app.bot.handlers.contact.GeminiService") as MockGemini, \
-         patch("app.bot.handlers.contact.ContactMergeService") as MockMerge, \
-         patch("app.bot.handlers.contact.notify_match_if_any", AsyncMock()), \
-         patch("app.bot.handlers.contact.PulseService") as MockPulse, \
+    with patch("app.bot.handlers.contact_handlers.rate_limit_middleware", AsyncMock(return_value=True)), \
+         patch("app.bot.handlers.contact_handlers.UserService") as MockUserSvc, \
+         patch("app.bot.handlers.contact_handlers.GeminiService") as MockGemini, \
+         patch("app.bot.handlers.contact_handlers.ContactMergeService") as MockMerge, \
+         patch("app.bot.handlers.contact_handlers.notify_match_if_any", AsyncMock()), \
+         patch("app.bot.handlers.contact_handlers.PulseService") as MockPulse, \
          patch("builtins.open", MagicMock(return_value=MagicMock(__enter__=MagicMock(return_value=MagicMock(read=MagicMock(return_value=mock_file_content)))))), \
          patch("os.path.exists", return_value=True), \
          patch("os.remove"), \
@@ -108,12 +108,12 @@ async def test_no_triangulation_when_merged(mock_update, mock_context):
     # Mock file content to simulate OGG file
     mock_file_content = b'OggS' + b'\x00' * 100
     
-    with patch("app.bot.handlers.contact.rate_limit_middleware", AsyncMock(return_value=True)), \
+    with patch("app.bot.handlers.contact_handlers.rate_limit_middleware", AsyncMock(return_value=True)), \
          patch("app.services.user_service.UserService.get_or_create_user", AsyncMock(return_value=db_user)), \
          patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value={"name": "Alice Johnson", "company": "TechCorp"})), \
          patch("app.services.merge_service.ContactMergeService.process_contact_data", AsyncMock(return_value=(merged_contact, True))), \
          patch("app.services.merge_service.ContactMergeService.is_reminder_only", return_value=False), \
-         patch("app.bot.match_handlers.notify_match_if_any", AsyncMock()), \
+         patch("app.bot.handlers.match_handlers.notify_match_if_any", AsyncMock()), \
          patch("app.services.pulse_service.PulseService.detect_company_triangulation", AsyncMock()) as mock_triangulation, \
          patch("builtins.open", MagicMock(return_value=MagicMock(__enter__=MagicMock(return_value=MagicMock(read=MagicMock(return_value=mock_file_content)))))), \
          patch("os.path.exists", return_value=True), \
@@ -155,10 +155,10 @@ async def test_triangulation_on_shared_contact(mock_update, mock_context):
         status="active"
     )
     
-    with patch("app.bot.handlers.contact.rate_limit_middleware", AsyncMock(return_value=True)), \
+    with patch("app.bot.handlers.contact_handlers.rate_limit_middleware", AsyncMock(return_value=True)), \
          patch("app.services.user_service.UserService.get_or_create_user", AsyncMock(return_value=db_user)), \
          patch("app.services.merge_service.ContactMergeService.process_contact_data", AsyncMock(return_value=(new_contact, False))), \
-         patch("app.bot.match_handlers.notify_match_if_any", AsyncMock()), \
+         patch("app.bot.handlers.match_handlers.notify_match_if_any", AsyncMock()), \
          patch("app.services.pulse_service.PulseService.detect_company_triangulation", AsyncMock(return_value=[existing_contact])):
         
         await handle_contact(mock_update, mock_context)
@@ -196,7 +196,7 @@ async def test_triangulation_on_text_contact(mock_update, mock_context):
          patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value={"name": "Alice Johnson", "company": "TechCorp", "role": "CTO"})), \
          patch("app.services.merge_service.ContactMergeService.process_contact_data", AsyncMock(return_value=(new_contact, False))), \
          patch("app.services.merge_service.ContactMergeService.is_reminder_only", return_value=False), \
-         patch("app.bot.match_handlers.notify_match_if_any", AsyncMock()), \
+         patch("app.bot.handlers.match_handlers.notify_match_if_any", AsyncMock()), \
          patch("app.services.pulse_service.PulseService.detect_company_triangulation", AsyncMock(return_value=existing_contacts)):
         
         await handle_text_message(mock_update, mock_context)
@@ -235,7 +235,7 @@ async def test_no_triangulation_without_company(mock_update, mock_context):
          patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value={"name": "Alice Johnson"})), \
          patch("app.services.merge_service.ContactMergeService.process_contact_data", AsyncMock(return_value=(new_contact, False))), \
          patch("app.services.merge_service.ContactMergeService.is_reminder_only", return_value=False), \
-         patch("app.bot.match_handlers.notify_match_if_any", AsyncMock()), \
+         patch("app.bot.handlers.match_handlers.notify_match_if_any", AsyncMock()), \
          patch("app.services.pulse_service.PulseService.detect_company_triangulation", AsyncMock(return_value=[])) as mock_triangulation:
         
         await handle_text_message(mock_update, mock_context)

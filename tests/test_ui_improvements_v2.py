@@ -2,10 +2,10 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, Update
 
-from app.bot.handlers.search import list_contacts
-from app.bot.match_handlers import find_matches_command
-from app.bot.reminder_handlers import list_reminders
-from app.bot.handlers.event import set_event_mode
+from app.bot.handlers.search_handlers import list_contacts
+from app.bot.handlers.match_handlers import find_matches_command
+from app.bot.handlers.reminder_handlers import list_reminders
+from app.bot.handlers.event_handlers import set_event_mode
 from app.models.contact import Contact
 from app.models.reminder import Reminder, ReminderStatus
 from datetime import datetime
@@ -27,8 +27,8 @@ async def test_list_contacts_with_buttons(mock_update, mock_context, mock_sessio
     mock_user_service = AsyncMock()
     
     # We need to patch the Service instantiation inside the handler
-    with patch("app.bot.handlers.search.ContactService", return_value=mock_contact_service), \
-         patch("app.bot.handlers.search.UserService", return_value=mock_user_service):
+    with patch("app.bot.handlers.search_handlers.ContactService", return_value=mock_contact_service), \
+         patch("app.bot.handlers.search_handlers.UserService", return_value=mock_user_service):
         
         await list_contacts(mock_update, mock_context)
         
@@ -81,8 +81,8 @@ async def test_find_matches_callback_handling(mock_update, mock_context, mock_se
     
     mock_user_service = AsyncMock()
 
-    with patch("app.bot.match_handlers.MatchService", return_value=mock_match_service), \
-         patch("app.bot.match_handlers.UserService", return_value=mock_user_service):
+    with patch("app.bot.handlers.match_handlers.MatchService", return_value=mock_match_service), \
+         patch("app.bot.handlers.match_handlers.UserService", return_value=mock_user_service):
          
         await find_matches_command(mock_update, mock_context)
         
@@ -109,8 +109,8 @@ async def test_list_reminders_callback_handling(mock_update, mock_context):
     
     mock_user_service = AsyncMock()
     
-    with patch("app.bot.reminder_handlers.ReminderService", return_value=mock_reminder_service), \
-         patch("app.bot.reminder_handlers.UserService", return_value=mock_user_service):
+    with patch("app.bot.handlers.reminder_handlers.ReminderService", return_value=mock_reminder_service), \
+         patch("app.bot.handlers.reminder_handlers.UserService", return_value=mock_user_service):
          
         await list_reminders(mock_update, mock_context)
         
