@@ -117,31 +117,56 @@ class GeminiService:
                 "notes": f"Processing error: {str(e)}"
             }
 
-    async def customize_card_intro(self, user_profile: str, target_contact: str) -> str:
+    async def customize_card_intro(self, user_profile: str, target_contact: str) -> Dict[str, str]:
         if not self.model:
-            return "Привет! Буду рад оставаться на связи."
+            return {"message": "Привет! Буду рад оставаться на связи.", "strategy": ""}
             
         prompt = f"""
-        Act as a professional networking assistant.
+        Act as a professional networking coach and copywriter.
         
-        My Profile:
+        My Profile (Sender):
         {user_profile}
         
-        Target Contact I am sending my card to:
+        Target Contact (Recipient):
         {target_contact}
         
-        Task:
-        Write a short context-specific introduction (max 2-3 sentences) for me to include in my business card when sending it to this person.
-        Highlight relevant synergies or why I am connecting based on *their* profile and *my* profile.
-        Focus on common interests, industries, or how I can help them.
-        Write in Russian.
+        Task 1: Networking Message
+        Write a short, direct, and conversational message in Russian.
+        - Address the person by FIRST NAME ONLY.
+        - Analyze our roles/seniority levels. 
+          * If I am senior (e.g., C-level, Head) and they are junior/mid (e.g., Analyst), be supportive/mentor-like but professional.
+          * If we are peers, be collaborative/casual.
+          * If I am selling/seeking partnership, be value-focused.
+        - Mention a specific synergy or why I'm connecting.
+        - Length: Short (2-3 sentences).
+        - No emojis. No subjects lines. No lists.
         
-        Output ONLY the introduction text.
+        Task 2: Strategy Advice
+        Based on our profiles, suggest what specific links, assets, or topics I should send differently or as a follow-up. 
+        Briefly explain WHY this approach fits our role dynamic.
+        
+        Output JSON:
+        {{
+            "message": "The text message string",
+            "strategy": "Your advice on what else to send or how to approach"
+        }}
         """
         
         try:
-             response = await self.model.generate_content_async(prompt)
-             return response.text.strip()
+             response = await self.model.generate_content_async(
+                 prompt,
+                 generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json"
+                )
+             )
+             
+             text = response.text.strip()
+             # Cleanup code blocks if present (though mime_type json usually avoids this, sometimes it adds it)
+             if text.startswith("```json"): text = text[7:]
+             if text.startswith("```"): text = text[3:]
+             if text.endswith("```"): text = text[:-3]
+             
+             return json.loads(text)
         except Exception as e:
              logger.error(f"Gemini custom intro error: {e}")
-             return "Привет! Буду рад оставаться на связи."
+             return {"message": "Привет! Буду рад оставаться на связи.", "strategy": "Ошибка генерации совета."}

@@ -209,16 +209,11 @@ async def delete_contact_field_handler(update: Update, context: ContextTypes.DEF
         if data.startswith("custom_"):
             idx = int(data.replace("custom_", ""))
             if contact.attributes and 'custom_contacts' in contact.attributes:
-                 custom = contact.attributes['custom_contacts']
+                 # Create a copy of the list to ensure we are not modifying in-place
+                 # and to ensure SQLAlchemy detects the change when we assign the new list.
+                 custom = list(contact.attributes['custom_contacts'])
                  if 0 <= idx < len(custom):
                       custom.pop(idx)
-                      # Update attributes
-                      current_attrs = dict(contact.attributes)
-                      current_attrs['custom_contacts'] = custom
-                      # We need to explicitly update attributes via service
-                      # ContactServices smart update merges, so passing dict with same key replaces it? 
-                      # Check service logic. Service: current_attrs.update(data). 
-                      # Wait, if I pass {'custom_contacts': new_list}, it updates that key. Correct.
                       update_data = {'custom_contacts': custom}
         else:
              # Standard field

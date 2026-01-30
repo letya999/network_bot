@@ -2,9 +2,22 @@ from app.schemas.profile import UserProfile
 
 class CardService:
     @staticmethod
-    def generate_text_card(profile: UserProfile, intro_text: str = None, pitch: str = None) -> str:
+    def generate_text_card(profile: UserProfile, intro_text: str = None, pitch: str = None, simple_mode: bool = False) -> str:
         from html import escape
         lines = []
+        
+        if simple_mode:
+            # Clean text mode: No emojis, no duplicate profile info
+            if intro_text:
+                lines.append(escape(intro_text))
+            
+            if pitch:
+                lines.append("")
+                # Just the content/link, no label
+                lines.append(escape(pitch))
+                
+            return "\n".join(lines)
+
         if intro_text:
              lines.append(f"👋 {escape(intro_text)}")
              lines.append("")

@@ -151,16 +151,27 @@ async def _generate_and_send_card(
         if selected_pitch:
             my_info.append(f"Pitch: {selected_pitch}")
         
-        intro = await gemini.customize_card_intro("\n".join(my_info), "\n".join(target_info))
-        card_text = CardService.generate_text_card(my_profile, intro_text=intro, pitch=selected_pitch)
+        generated_content = await gemini.customize_card_intro("\n".join(my_info), "\n".join(target_info))
+        
+        intro_text = generated_content.get("message", "Привет!")
+        strategy_text = generated_content.get("strategy", "")
+        
+        card_text = CardService.generate_text_card(my_profile, intro_text=intro_text, pitch=selected_pitch, simple_mode=True)
         
         await status_msg.delete()
-        from html import escape
-        safe_name = escape(target_contact.name) if target_contact.name else "Неизвестно"
+        
+        # Send the card (plain text, no header)
         await message.reply_text(
-            f"📨 <b>Персонализированная визитка для {safe_name}</b>:\n\n{card_text}",
+            card_text,
             parse_mode="HTML"
         )
+        
+        # Send strategy as separate message if available
+        if strategy_text:
+             await message.reply_text(
+                 f"💡 <b>Совет AI:</b>\n{strategy_text}",
+                 parse_mode="HTML"
+             )
     except Exception:
         logger.exception("Error generating card")
         await status_msg.edit_text("❌ Произошла ошибка при генерации.")

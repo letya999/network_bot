@@ -139,12 +139,13 @@ class ContactService:
             if not hasattr(contact, field):
                 continue
                 
-            # Skip None values - don't overwrite existing data with None
-            if value is None:
-                continue
+            # Skip None values check removed to allow clearing fields.
+            # if value is None:
+            #    continue
             
             # For string fields, skip empty strings - don't overwrite existing data
-            if isinstance(value, str) and not value.strip():
+            # But allow None to clear
+            if value is not None and isinstance(value, str) and not value.strip():
                 continue
             
             # Special case: don't overwrite a real name with "Неизвестно"
