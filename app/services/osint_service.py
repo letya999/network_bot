@@ -21,12 +21,10 @@ from sqlalchemy import select, func
 from app.core.config import settings
 from app.models.contact import Contact
 from app.services.gemini_service import GeminiService
+from app.infrastructure.clients.tavily import TavilyClient
 from app.config.constants import (
     UNKNOWN_CONTACT_NAME,
     OSINT_ENRICHMENT_DELAY_DAYS,
-    TAVILY_MAX_RESULTS,
-    TAVILY_SEARCH_DEPTH,
-    TAVILY_TIMEOUT_SECONDS,
     BATCH_ENRICHMENT_DELAY_SECONDS
 )
 
@@ -38,7 +36,8 @@ class OSINTService:
 
     def __init__(self, session: AsyncSession, tavily_api_key: str = None, gemini_api_key: str = None):
         self.session = session
-        self.tavily_api_key = tavily_api_key or settings.TAVILY_API_KEY
+        tavily_key = tavily_api_key or settings.TAVILY_API_KEY
+        self.tavily_client = TavilyClient(tavily_key) if tavily_key else None
         self.gemini = GeminiService(api_key=gemini_api_key)
 
     async def _tavily_search(self, query: str, include_domains: List[str] = None) -> List[Dict[str, Any]]:
@@ -46,41 +45,11 @@ class OSINTService:
         Perform a search using Tavily AI API.
         Returns rich results with content.
         """
-    async def _tavily_search(self, query: str, include_domains: List[str] = None) -> List[Dict[str, Any]]:
-        """
-        Perform a search using Tavily AI API.
-        Returns rich results with content.
-        """
-        if not self.tavily_api_key:
-            logger.warning("Tavily API key not configured")
+        if not self.tavily_client:
+            logger.warning("Tavily client not configured")
             return []
 
-        url = "https://api.tavily.com/search"
-        payload = {
-            "api_key": self.tavily_api_key,
-            "query": query,
-            "search_depth": TAVILY_SEARCH_DEPTH,  # "basic" or "advanced"
-            "include_answer": False,
-            "include_raw_content": False,
-            "max_results": TAVILY_MAX_RESULTS,
-        }
-        
-        if include_domains:
-            payload["include_domains"] = include_domains
-
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=TAVILY_TIMEOUT_SECONDS)) as response:
-                    if response.status != 200:
-                        logger.error(f"Tavily error {response.status}: {await response.text()}")
-                        return []
-                    
-                    data = await response.json()
-                    return data.get("results", [])
-
-        except Exception:
-            logger.exception("Tavily search error")
-            return []
+        return await self.tavily_client.search(query, include_domains=include_domains)
 
     async def _structure_osint_data(self, raw_data: Dict[str, Any], contact_info: Dict[str, str]) -> Dict[str, Any]:
         """
