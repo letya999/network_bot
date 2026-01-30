@@ -45,14 +45,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received voice from user {user.id}. Duration: {voice.duration}s")
 
     if voice.file_size and voice.file_size > 20 * 1024 * 1024:
-        await update.message.reply_text("❌ Файл слишком большой. Максимум 20 МБ.")
+        await update.message.reply_text("❌ File too large. Maximum 20 MB.")
         return
 
     if voice.duration > 600:
-        await update.message.reply_text("❌ Слишком длинное сообщение. Максимум 10 минут.")
+        await update.message.reply_text("❌ Message too long. Maximum 10 minutes.")
         return
 
-    status_msg = await update.message.reply_text("🎤 Слушаю и обрабатываю...")
+    status_msg = await update.message.reply_text("🎤 Listening and processing...")
     status_msg_deleted = False
 
     temp_dir = tempfile.mkdtemp(prefix="voice_")
@@ -65,7 +65,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         with open(file_path, 'rb') as f:
             if f.read(4)[:4] != b'OggS':
-                await status_msg.edit_text("❌ Неверный формат файла.")
+                await status_msg.edit_text("❌ Invalid file format.")
                 return
 
         gemini = GeminiService()
@@ -77,7 +77,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             data = await gemini.extract_contact_data(audio_path=file_path, prompt_template=db_user.custom_prompt)
             
             if data.get("error"):
-                 await status_msg.edit_text(f"❌ Ошибка обработки (возможен лимит AI): {data.get('error')}")
+                 await status_msg.edit_text(f"❌ Processing error (possible AI limit): {data.get('error')}")
                  return
 
             _apply_event_context(data, context)
@@ -96,7 +96,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                              
                         await reminder_service.create_reminder(
                             user_id=db_user.id,
-                            title=rem.get("title", "Напоминание"),
+                            title=rem.get("title", "Reminder"),
                             due_at=due_date,
                             description=rem.get("description")
                         )
@@ -106,14 +106,14 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 await status_msg.delete()
                 status_msg_deleted = True
-                await update.message.reply_text(f"✅ Создано напоминаний: {count}")
+                await update.message.reply_text(f"✅ Reminders created: {count}")
                 return
 
             # Process with Merge Service
             contact, was_merged = await merge_service.process_contact_data(db_user.id, data, context.user_data)
             
             if was_merged:
-                await status_msg.edit_text("🔗 Объединено с недавним контактом!")
+                await status_msg.edit_text("🔗 Merged with recent contact!")
             else:
                 await status_msg.delete()
                 status_msg_deleted = True
@@ -145,9 +145,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.exception("Error handling voice")
         if not status_msg_deleted:
             try:
-                await status_msg.edit_text("❌ Произошла ошибка при обработке. Попробуйте еще раз.")
+                await status_msg.edit_text("❌ An error occurred during processing. Please try again.")
             except Exception:
-                await update.message.reply_text("❌ Произошла ошибка при обработке. Попробуйте еще раз.")
+                await update.message.reply_text("❌ An error occurred during processing. Please try again.")
     finally:
         try:
             if os.path.exists(file_path):
@@ -183,7 +183,7 @@ async def handle_contact(update: Update, context: ContextTypes.DEFAULT_TYPE):
         contact, was_merged = await merge_service.process_contact_data(db_user.id, data, context.user_data)
         
         if was_merged:
-            await update.message.reply_text("🔗 Объединено с недавней заметкой!")
+            await update.message.reply_text("🔗 Merged with recent note!")
         
         # Update last context
         context.user_data["last_contact_id"] = contact.id
@@ -248,21 +248,21 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 data = regex_data
                 # Ensure minimal fields
                 if "name" not in data:
-                    data["name"] = "Новый контакт"
-                data["notes"] = f"⚠️ Получено при сбое AI: {text[:50]}..."
+                    data["name"] = "New Contact"
+                data["notes"] = f"⚠️ Retrieved during AI failure: {text[:50]}..."
                 
                 await update.message.reply_text(
-                    f"⚠️ <b>Лимит AI исчерпан или сбой.</b>\n"
-                    f"Сохраняю то, что удалось извлечь через шаблоны (Regex).\n"
-                    f"Ошибка: {error_msg}",
+                    f"⚠️ <b>AI limit exceeded or error.</b>\n"
+                    f"Saving what could be extracted via templates (Regex).\n"
+                    f"Error: {error_msg}",
                     parse_mode="HTML"
                 )
             else:
                 await update.message.reply_text(
-                    f"⏳ <b>Лимит AI исчерпан (20 запросов/мин)</b> или произошла ошибка.\n"
-                    f"Пожалуйста, подождите минуту и попробуйте снова.\n"
-                    f"Никаких контактов в тексте не найдено шаблонами.\n\n"
-                    f"Ошибка: {error_msg}",
+                    f"⏳ <b>AI limit exceeded (20 req/min)</b> or error occurred.\n"
+                    f"Please wait a minute and try again.\n"
+                    f"No contacts found in text via templates.\n\n"
+                    f"Error: {error_msg}",
                     parse_mode="HTML"
                 )
                 return
@@ -287,7 +287,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     context.user_data['add_contact_label_temp'] = text
                     context.user_data['edit_contact_field'] = 'add_contact_value'
                     await update.message.reply_text(
-                        f"Отлично. Теперь введите **значение** для '{text}' (ссылку, телефон или текст):",
+                        f"Great. Now enter the **value** for '{text}' (link, phone, or text):",
                         parse_mode="Markdown"
                     )
                     return
@@ -333,7 +333,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                             
                             if updated_contact:
                                  context.user_data.pop('edit_contact_field', None)
-                                 await update.message.reply_text("✅ Контакт добавлен.")
+                                 await update.message.reply_text("✅ Contact added.")
                                  
                                  # Return to Manage Contacts Menu
                                  from app.bot.handlers.contact_detail_handlers import manage_contact_contacts_menu
@@ -354,7 +354,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                                  )
                                  from telegram import InlineKeyboardButton, InlineKeyboardMarkup
                                  
-                                 menu_text = "🔗 **Контакты**\n\nУправление контактами:"
+                                 menu_text = "🔗 **Contacts**\n\nManage contacts:"
                                  keyboard = []
                                  contact = updated_contact
                                  # Standard Fields
@@ -375,15 +375,15 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                                            short_val = val[:20] + "..." if len(val) > 20 else val
                                            keyboard.append([InlineKeyboardButton(f"❌ {lbl}: {short_val}", callback_data=f"{CONTACT_DEL_FIELD_PREFIX}custom_{idx}")])
 
-                                 keyboard.append([InlineKeyboardButton("➕ Добавить контакт", callback_data=f"{CONTACT_ADD_FIELD_PREFIX}")])
-                                 keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"{CONTACT_EDIT_PREFIX}{contact.id}")])
+                                 keyboard.append([InlineKeyboardButton("➕ Add Contact", callback_data=f"{CONTACT_ADD_FIELD_PREFIX}")])
+                                 keyboard.append([InlineKeyboardButton("🔙 Back", callback_data=f"{CONTACT_EDIT_PREFIX}{contact.id}")])
                                  
                                  await update.message.reply_text(menu_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
                                  return
                         except Exception:
                              logger.exception("Error adding contact")
                              context.user_data.pop('edit_contact_field', None)
-                             await update.message.reply_text("❌ Ошибка.")
+                             await update.message.reply_text("❌ Error.")
                              return
 
                 # Normal single field edit
@@ -396,39 +396,39 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     
                     if updated_contact:
                         context.user_data.pop('edit_contact_field', None)
-                        await update.message.reply_text(f"✅ Поле обновлено.")
+                        await update.message.reply_text(f"✅ Field updated.")
                         
                         # Show Edit Menu again to continue editing
                         # Re-import to avoid circular dependency at top level
                         from app.bot.handlers.contact_detail_handlers import CONTACT_EDIT_FIELD_PREFIX, CONTACT_VIEW_PREFIX, CONTACT_ADD_FIELD_PREFIX
                         from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-                        menu_text = f"✏️ **Редактирование контакта: {updated_contact.name}**\n\nВыберите поле для изменения:"
+                        menu_text = f"✏️ **Editing Contact: {updated_contact.name}**\n\nSelect a field to change:"
                         keyboard = [
                             [
-                                 InlineKeyboardButton("👤 Имя", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}name"),
-                                 InlineKeyboardButton("🏢 Компания", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}company"),
-                                 InlineKeyboardButton("💼 Роль", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}role")
+                                 InlineKeyboardButton("👤 Name", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}name"),
+                                 InlineKeyboardButton("🏢 Company", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}company"),
+                                 InlineKeyboardButton("💼 Role", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}role")
                             ],
                             [
-                                InlineKeyboardButton("🔗 Контакты (+)", callback_data=f"contact_manage_contacts")
+                                InlineKeyboardButton("🔗 Contacts (+)", callback_data=f"contact_manage_contacts")
                             ],
                             [
-                                InlineKeyboardButton("📄 Заметки", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}notes"),
-                                InlineKeyboardButton("📍 Событие", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}event_name")
+                                InlineKeyboardButton("📄 Notes", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}notes"),
+                                InlineKeyboardButton("📍 Event", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}event_name")
                             ],
                             [
-                                InlineKeyboardButton("🎯 След. шаг", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}follow_up_action"),
-                                InlineKeyboardButton("📝 Договорённости", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}agreements")
+                                InlineKeyboardButton("🎯 Next Step", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}follow_up_action"),
+                                InlineKeyboardButton("📝 Agreements", callback_data=f"{CONTACT_EDIT_FIELD_PREFIX}agreements")
                             ],
                             [
-                                InlineKeyboardButton("🔙 Назад к просмотру", callback_data=f"{CONTACT_VIEW_PREFIX}{updated_contact.id}")
+                                InlineKeyboardButton("🔙 Back to view", callback_data=f"{CONTACT_VIEW_PREFIX}{updated_contact.id}")
                             ]
                         ]
                         await update.message.reply_text(menu_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="Markdown")
                         return
                     else:
-                        await update.message.reply_text("❌ Ошибка: Контакт не найден.")
+                        await update.message.reply_text("❌ Error: Contact not found.")
                         context.user_data.pop('editing_contact_id', None)
                         return
                 except ValueError:
@@ -459,7 +459,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     # Clear edit state
                     context.user_data.pop('editing_contact_id', None)
                     
-                    await update.message.reply_text("✅ Данные обновлены.")
+                    await update.message.reply_text("✅ Data updated.")
                     # Show updated card
                     card = format_card(updated_contact)
                     keyboard = get_contact_keyboard(updated_contact)
@@ -469,7 +469,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                     )
                     return
                 else:
-                    await update.message.reply_text("❌ Ошибка: Контакт не найден.")
+                    await update.message.reply_text("❌ Error: Contact not found.")
                     context.user_data.pop('editing_contact_id', None)
                     return
             except ValueError:
@@ -501,9 +501,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         contact, was_merged = await merge_service.process_contact_data(db_user.id, data, context.user_data)
         
         if was_merged:
-            await update.message.reply_text("🔗 Информация добавлена!")
+            await update.message.reply_text("🔗 Information added!")
         else:
-            await update.message.reply_text("💾 Контакт сохранен (жду описание...)")
+            await update.message.reply_text("💾 Contact saved (waiting for description...)")
             
         context.user_data["last_contact_id"] = contact.id
         context.user_data["last_contact_time"] = time.time()

@@ -3,11 +3,28 @@ from app.services.user_service import UserService
 from app.schemas.profile import UserProfile
 
 class ProfileService:
+    """
+    Service for managing user profiles.
+    Handles data validation, serialization, and persistence for user profile information.
+    """
     def __init__(self, session: AsyncSession):
+        """
+        Args:
+            session: SQLAlchemy AsyncSession for database operations.
+        """
         self.session = session
         self.user_service = UserService(session)
 
     async def get_profile(self, telegram_id: int) -> UserProfile:
+        """
+        Retrieves the user profile for a given Telegram ID.
+
+        Args:
+            telegram_id: The Telegram User ID.
+
+        Returns:
+            UserProfile: The user's profile data wrapped in a Pydantic model.
+        """
         # Optimize: Try get_user first (read-only query)
         user = await self.user_service.get_user(telegram_id)
         
@@ -27,7 +44,17 @@ class ProfileService:
         return UserProfile(**data)
 
     async def update_profile_field(self, telegram_id: int, field: str, value: any) -> UserProfile:
-        """Update a single field in the profile"""
+        """
+        Updates a single field in the user's profile.
+
+        Args:
+            telegram_id: The Telegram User ID.
+            field: The field name to update.
+            value: The new value for the field.
+
+        Returns:
+            UserProfile: The updated user profile.
+        """
         user = await self.user_service.get_or_create_user(telegram_id)
         # Create a copy to ensure SQLAlchemy detects change
         current_data = dict(user.profile_data) if user.profile_data else {}
@@ -48,6 +75,16 @@ class ProfileService:
         return profile
 
     async def update_full_profile(self, telegram_id: int, profile: UserProfile) -> UserProfile:
+        """
+        Updates the entire profile for a user.
+
+        Args:
+            telegram_id: The Telegram User ID.
+            profile: UserProfile object with new data.
+
+        Returns:
+            UserProfile: The updated user profile.
+        """
         user = await self.user_service.get_or_create_user(telegram_id)
         data = profile.model_dump(mode='json')
         user.profile_data = data

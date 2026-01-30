@@ -110,10 +110,10 @@ async def route_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     elif cmd == "faq":
         return await faq_command(update, context)
         
-    await query.answer("Опция в разработке...")
+    await query.answer("Option in development...")
 
 async def materials_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Используйте меню: /start -> Мои материалы")
+    await update.message.reply_text("Use menu: /start -> My Materials")
 
 async def post_init(application):
     """
@@ -121,14 +121,14 @@ async def post_init(application):
     """
     bot = application.bot
     commands = [
-        BotCommand("start", "🚀 Старт / О боте"),
-        BotCommand("main", "🏠 Главное меню"),
-        BotCommand("profile", "👤 Мой профиль"),
-        BotCommand("materials", "📂 Мои материалы"),
-        BotCommand("networking", "🤝 Нетворкинг"),
-        BotCommand("faq", "📚 FAQ / Инструкция"),
-        BotCommand("tools", "🛠 Инструменты"),
-        BotCommand("settings", "⚙️ Настройки"),
+        BotCommand("start", "🚀 Start / About"),
+        BotCommand("main", "🏠 Main Menu"),
+        BotCommand("profile", "👤 My Profile"),
+        BotCommand("materials", "📂 My Materials"),
+        BotCommand("networking", "🤝 Networking"),
+        BotCommand("faq", "📚 FAQ / Instructions"),
+        BotCommand("tools", "🛠 Tools"),
+        BotCommand("settings", "⚙️ Settings"),
     ]
     await bot.set_my_commands(commands)
     logger.info(f"Bot commands set: {commands}")

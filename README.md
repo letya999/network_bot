@@ -1,6 +1,11 @@
 # NetworkingCRM — Персональный AI-ассистент для нетворкинга
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+
 **NetworkingCRM** — это умный Telegram-бот, который превращает хаотичный нетворкинг в системный процесс. Он помогает быстро фиксировать контакты голосом, обогащать их данными и напоминает о важных договоренностях.
+
 
 ## 🚀 Основная проблема и решение
 
@@ -34,46 +39,42 @@
 
 ---
 
-networking-crm/
-├── bot/                 # Telegram handlers, keyboards, middlewares
-│   ├── handlers/        # 🆕 Модульные handlers (base, contact, search, prompt, event, card)
-│   ├── main.py          # Bot initialization
-│   └── rate_limiter.py  # Rate limiting middleware
-├── services/            # Бизнес-логика (AI, Contacts, Reminders, OSINT)
-│   ├── merge_service.py # 🆕 ContactMergeService для умного слияния
-│   └── ...
-├── repositories/        # Работа с БД (Data Access Layer)
-├── models/              # SQLAlchemy модели (с композитными индексами 🆕)
-├── core/                # Конфигурация, БД, Redis
-├── config/              # 🆕 Константы и настройки
-│   └── constants.py     # Централизованные константы
-├── prompts/             # Промпты для AI
-└── alembic/             # Миграции базы данных
+## 📂 Структура проекта
+
+```
+network-bot/
+├── app/
+│   ├── bot/                 # Telegram handlers, keyboards, middlewares
+│   │   ├── handlers/        # Модульные handlers
+│   │   ├── main.py          # Инициализация бота
+│   │   └── run.py           # Точка входа для запуска
+│   ├── services/            # Бизнес-логика (AI, Contacts, Reminders, OSINT)
+│   ├── repositories/        # Работа с БД (Data Access Layer)
+│   ├── models/              # SQLAlchemy модели
+│   ├── core/                # Конфигурация, БД, Redis
+│   ├── api/                 # FastAPI эндпоинты
+│   └── config/              # Константы и настройки
+├── alembic/                 # Миграции базы данных
+├── tests/                   # Тесты (pytest)
+└── docker-compose.yml
 ```
 
-### 🔧 Недавний рефакторинг (v2.0)
+### 🔧 Особенности реализации
 
-**Дата:** 2026-01-26
-
-Проект прошёл масштабный рефакторинг для улучшения производительности, читаемости и масштабируемости:
-
-**Ключевые улучшения:**
-- 🚀 **Производительность БД**: +500-1000% благодаря композитным индексам
-- 🚀 **OSINT Enrichment**: -50% времени (параллелизация Tavily API)
-- 🐛 **Исправлены критические баги**: Sheets sync, утечка памяти в rate limiter
-- 🏗️ **Модульная архитектура**: handlers.py (826 строк) → 7 модулей по ~100 строк
-- ✅ **Новые сервисы**: ContactMergeService для умного слияния контактов
-- 📊 **Константы**: Централизованное управление через `config/constants.py`
-
-Подробности: [REFACTORING_REPORT_FINAL.md](REFACTORING_REPORT_FINAL.md)
+- **Производительность БД**: Композитные индексы для быстрого поиска.
+- **OSINT Enrichment**: Параллельное обогащение данных через Tavily API.
+- **Модульная архитектура**: Разделение на слои (Handlers -> Services -> Repositories).
+- **Централизованная конфигурация**: Управление через Pydantic Settings/Constants.
 
 ---
 
 ## 🏗 Архитектура проекта
 
 Проект построен по принципам **Clean Architecture** с разделением на слои:
-
-```
+- **Presentation Layer**: Telegram Bot Handlers, FastAPI Routes
+- **Business Logic Layer**: Services
+- **Data Access Layer**: Repositories
+- **Database**: PostgreSQL
 
 ---
 
@@ -87,7 +88,7 @@ networking-crm/
 ### 1. Клонирование репозитория
 ```bash
 git clone <repository_url>
-cd networking-crm
+cd network_bot
 ```
 
 ### 2. Настройка окружения
@@ -107,6 +108,10 @@ docker-compose up -d --build
 
 ### 4. Локальный запуск (для разработки)
 ```bash
+# Создание виртуального окружения
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
 # Установка зависимостей
 pip install -r requirements.txt
 
@@ -114,7 +119,7 @@ pip install -r requirements.txt
 alembic upgrade head
 
 # Запуск бота
-python -m bot.main
+python -m app.bot.run
 ```
 
 ---
@@ -123,6 +128,7 @@ python -m bot.main
 
 ### Основные
 - `/start` — Начало работы / Приветствие
+- `/main` — Главное меню
 - `/list` — Список последних контактов
 - `/find <query>` — Поиск контакта (например, `/find инвесторы`)
 - `/stats` — Статистика нетворкинга
@@ -141,13 +147,23 @@ python -m bot.main
 ## 🗺 Roadmap
 
 - [x] **Phase 0: Infrastructure** — Структура проекта, БД, Docker.
-- [ ] **Phase 1: Core MVP** — Голосовой ввод, создание контактов, список.
+- [x] **Phase 1: Core MVP** — Голосовой ввод, создание контактов, список.
 - [ ] **Phase 2: User Profile** — Профиль пользователя, генерация визиток.
 - [ ] **Phase 3: Follow-up** — Напоминания и генерация сообщений.
 - [ ] **Phase 4: Matching** — Поиск общих интересов и семантический поиск.
 
 ---
 
+## 🤝 Contributing
+
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) and [Code of Conduct](CODE_OF_CONDUCT.md).
+
+1. Fork the project
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
+
 ## 📄 License
 
-Project is proprietary.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

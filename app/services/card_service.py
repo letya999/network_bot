@@ -3,6 +3,18 @@ from app.schemas.profile import UserProfile
 class CardService:
     @staticmethod
     def generate_text_card(profile: UserProfile, intro_text: str = None, pitch: str = None, simple_mode: bool = False) -> str:
+        """
+        Generates a formatted text card for a user profile.
+
+        Args:
+            profile: UserProfile object containing user details.
+            intro_text: Optional introductory text.
+            pitch: Optional pitch text.
+            simple_mode: If True, returns a cleaner version without emojis or duplicate info.
+
+        Returns:
+            str: The formatted text card.
+        """
         from html import escape
         lines = []
         
@@ -23,7 +35,7 @@ class CardService:
              lines.append("")
         
         # Name and basic info
-        name = escape(profile.full_name or "Без имени")
+        name = escape(profile.full_name or "Unnamed")
         lines.append(f"📇 <b>{name}</b>")
         
         info_line = []
@@ -45,14 +57,14 @@ class CardService:
             lines.append("")
         
         if pitch:
-            lines.append(f"🚀 <b>Питч</b>: {escape(pitch)}")
+            lines.append(f"🚀 <b>Pitch</b>: {escape(pitch)}")
             lines.append("")
 
         # One-Pagers removed from text card to keep it clean as per user request
         # if profile.one_pagers: ...
 
         if profile.interests:
-            lines.append(f"⭐ <b>Интересы</b>: {escape(', '.join(profile.interests))}")
+            lines.append(f"⭐ <b>Interests</b>: {escape(', '.join(profile.interests))}")
             lines.append("")
             
         # Contacts
@@ -67,13 +79,22 @@ class CardService:
                      contacts.append(f"• {escape(cc.label)}: {escape(cc.value)}")
              
         if contacts:
-            lines.append("📞 <b>Контакты</b>:")
+            lines.append("📞 <b>Contacts</b>:")
             lines.extend(contacts)
             
         return "\n".join(lines)
 
     @staticmethod
     def generate_vcard_string(profile: UserProfile) -> str:
+        """
+        Generates a vCard 3.0 string for the user profile.
+
+        Args:
+            profile: UserProfile object.
+
+        Returns:
+            str: The vCard string.
+        """
         # Simple vCard 3.0 generator
         lines = ["BEGIN:VCARD", "VERSION:3.0"]
         
