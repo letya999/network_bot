@@ -8,7 +8,7 @@ from telegram.error import BadRequest
 
 @pytest.fixture(autouse=True)
 def mock_match_notify():
-    with patch("app.bot.handlers.match_handlers.notify_match_if_any", AsyncMock()) as mock:
+    with patch("app.bot.handlers.contact_handlers.notify_match_if_any", AsyncMock()) as mock:
         yield mock
 
 def assert_msg_contains(mock_reply_text, substring):
@@ -31,7 +31,7 @@ async def test_handle_text_contact_creation(mock_update, mock_context):
         
         mock_context.bot.get_chat = AsyncMock(return_value=MagicMock(username="johndoe"))
         await handle_text_message(mock_update, mock_context)
-        assert_msg_contains(mock_update.message.reply_text, "Контакт сохранен")
+        assert_msg_contains(mock_update.message.reply_text, "Contact saved")
 
 @pytest.mark.asyncio
 async def test_handle_contact_shared(mock_update, mock_context):
@@ -48,18 +48,18 @@ async def test_handle_voice_merge(mock_update, mock_context):
     mock_update.message.voice = MagicMock(file_id="v1", duration=5, file_size=100)
     
     # Mock Open
-    with patch("app.bot.handlers.contact.open", MagicMock()) as mock_open:
+    with patch("builtins.open", MagicMock()) as mock_open:
         mock_open.return_value.__enter__.return_value.read.return_value = b'OggS'
         
         # Mock other dependencies
         with patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value={"agreements": ["Test"]})), \
              patch("os.path.exists", return_value=True), patch("os.remove"), patch("os.rmdir"), patch("tempfile.mkdtemp", return_value="tmp"), \
-             patch("app.bot.handlers.contact.ContactMergeService") as MockMergeService:
+             patch("app.bot.handlers.contact_handlers.ContactMergeService") as MockMergeService:
             
             # Setup mock merge service to return merged=True
             mock_service_instance = MockMergeService.return_value
             # Returns (Contact, was_merged)
-            mock_service_instance.process_contact_data = AsyncMock(return_value=(Contact(name="Merged Contact"), True))
+            mock_service_instance.process_contact_data = AsyncMock(return_value=(Contact(id=uuid.uuid4(), name="Merged Contact"), True))
             mock_service_instance.is_reminder_only.return_value = False
             
             await handle_voice(mock_update, mock_context)
@@ -68,7 +68,7 @@ async def test_handle_voice_merge(mock_update, mock_context):
             status_msg_mock = mock_update.message.reply_text.return_value
             
             # Check for merge confirmation message (it's an edit to the status message)
-            assert_msg_contains(status_msg_mock.edit_text, "Объединено")
+            assert_msg_contains(status_msg_mock.edit_text, "Merged")
             
             # Check validation of final card (sent via reply_text)
             last_call_args = mock_update.message.reply_text.call_args
@@ -78,4 +78,4 @@ async def test_handle_voice_merge(mock_update, mock_context):
 async def test_voice_too_large(mock_update, mock_context):
     mock_update.message.voice = MagicMock(file_size=25 * 1024 * 1024)
     await handle_voice(mock_update, mock_context)
-    assert_msg_contains(mock_update.message.reply_text, "слишком большой")
+    assert_msg_contains(mock_update.message.reply_text, "File too large")

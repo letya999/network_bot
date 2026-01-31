@@ -197,7 +197,7 @@ class TestImportCommand:
         call_args = str(mock_update.message.reply_text.call_args)
         assert "LinkedIn" in call_args
         # Should return conversation state
-        from app.bot.osint_handlers import WAITING_FOR_CSV
+        from app.bot.handlers.osint_handlers import WAITING_FOR_CSV
         assert result == WAITING_FOR_CSV
 
 

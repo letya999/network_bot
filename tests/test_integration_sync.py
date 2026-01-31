@@ -3,7 +3,7 @@ Tests for integration handlers (sync commands).
 """
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
-from app.bot.integration_handlers import sync_command, sync_run_callback, sync_notion, sync_sheets
+from app.bot.handlers.integration_handlers import sync_command, sync_run_callback, sync_notion, sync_sheets
 from app.models.user import User
 from app.models.contact import Contact
 import uuid
