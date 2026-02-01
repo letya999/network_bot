@@ -14,6 +14,7 @@ WAITING_INPUT = 2
 # Services
 SERVICE_GEMINI = "gemini"
 SERVICE_TAVILY = "tavily"
+SERVICE_OPENAI = "openai"
 SERVICE_NOTION = "notion"
 SERVICE_SHEETS = "sheets"
 SERVICE_AUTO = "auto" # for pasting the whole block
@@ -28,6 +29,7 @@ async def set_credentials_command(update: Update, context: ContextTypes.DEFAULT_
         
     keyboard = [
         [InlineKeyboardButton("🧠 Gemini AI", callback_data=SERVICE_GEMINI)],
+        [InlineKeyboardButton("🧠 OpenAI GPT", callback_data=SERVICE_OPENAI)],
         [InlineKeyboardButton("🕵️ Tavily OSINT", callback_data=SERVICE_TAVILY)],
         [InlineKeyboardButton("📝 Notion", callback_data=SERVICE_NOTION)],
         [InlineKeyboardButton("📊 Google Sheets", callback_data=SERVICE_SHEETS)],
@@ -58,6 +60,8 @@ async def service_choice_callback(update: Update, context: ContextTypes.DEFAULT_
     
     if choice == SERVICE_GEMINI:
         msg = "🔑 Введите *Gemini API Key*:"
+    elif choice == SERVICE_OPENAI:
+        msg = "🔑 Введите *OpenAI API Key*:"
     elif choice == SERVICE_TAVILY:
         msg = "🔑 Введите *Tavily API Key*:"
     elif choice == SERVICE_NOTION:
@@ -82,6 +86,7 @@ async def service_choice_callback(update: Update, context: ContextTypes.DEFAULT_
             "Я попытаюсь распознать: Gemini, Tavily, Notion, Google Sheets.\n\n"
             "Пример:\n"
             "GEMINI_API_KEY=...\n"
+            "OPENAI_API_KEY=...\n"
             "NOTION_API_KEY=..."
         )
     else:
@@ -112,6 +117,11 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             key = text.strip().split("=")[-1].strip() # Handle KEY=value if user pastes that
             current_settings["gemini_api_key"] = key
             response_text = "✅ Gemini API Key сохранен!"
+
+        elif service == SERVICE_OPENAI:
+            key = text.strip().split("=")[-1].strip()
+            current_settings["openai_api_key"] = key
+            response_text = "✅ OpenAI API Key сохранен!"
             
         elif service == SERVICE_TAVILY:
             key = text.strip().split("=")[-1].strip()
@@ -218,6 +228,7 @@ async def handle_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Mappings
             mappings = {
                 "GEMINI_API_KEY": "gemini_api_key",
+                "OPENAI_API_KEY": "openai_api_key",
                 "TAVILY_API_KEY": "tavily_api_key",
                 "NOTION_API_KEY": "notion_api_key",
                 "NOTION_DATABASE_ID": "notion_database_id",
