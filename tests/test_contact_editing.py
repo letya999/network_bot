@@ -22,7 +22,7 @@ async def test_explicit_contact_edit_mode(mock_update, mock_context):
     )
     
     with patch("app.services.user_service.UserService.get_or_create_user", AsyncMock()), \
-         patch("app.services.gemini_service.GeminiService.extract_contact_data", 
+         patch("app.services.ai_service.AIService.extract_contact_data", 
                AsyncMock(return_value={"phone": "+79991234567"})), \
          patch("app.services.contact_service.ContactService.update_contact", 
                AsyncMock(return_value=updated_contact)):
@@ -58,7 +58,7 @@ async def test_normal_text_creates_new_contact(mock_update, mock_context):
     
     with patch("app.services.user_service.UserService.get_or_create_user", 
                AsyncMock(return_value=mock_db_user)), \
-         patch("app.services.gemini_service.GeminiService.extract_contact_data", 
+         patch("app.services.ai_service.AIService.extract_contact_data", 
                AsyncMock(return_value={"name": "Иван Петров", "company": "Яндекс"})), \
          patch("app.services.merge_service.ContactMergeService.process_contact_data", 
                AsyncMock(return_value=(new_contact, False))), \
@@ -82,7 +82,7 @@ async def test_edit_mode_with_reminders(mock_update, mock_context):
     updated_contact = Contact(id=contact_id, name="Test User")
     
     with patch("app.services.user_service.UserService.get_or_create_user", AsyncMock()), \
-         patch("app.services.gemini_service.GeminiService.extract_contact_data", 
+         patch("app.services.ai_service.AIService.extract_contact_data", 
                AsyncMock(return_value={
                    "reminders": [{"title": "Позвонить", "due_date": "завтра в 15:00"}]
                })), \

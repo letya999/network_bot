@@ -95,7 +95,7 @@ async def test_show_prompt_default(mock_update, mock_context, mock_user_service)
     mock_user_service.get_or_create_user = AsyncMock(return_value=mock_user)
     
     # Patch GeminiService in prompt.py
-    with patch("app.bot.handlers.prompt_handlers.GeminiService") as MockGemini:
+    with patch("app.bot.handlers.prompt_handlers.AIService") as MockGemini:
         mock_gemini = MockGemini.return_value
         mock_gemini.get_prompt.return_value = "System Prompt"
         

@@ -88,7 +88,7 @@ async def test_generate_card_callback(mock_update, mock_context, mock_session):
     mock_update.callback_query.data = f"gen_card_{uuid.uuid4()}"
     mock_session.get.return_value = Contact(name="Recipient")
     with patch("app.services.profile_service.ProfileService.get_profile", AsyncMock(return_value=MagicMock(full_name="Me"))), \
-         patch("app.services.gemini_service.GeminiService.customize_card_intro", AsyncMock(return_value={"message": "Hi"})), \
+         patch("app.services.ai_service.AIService.customize_card_intro", AsyncMock(return_value={"message": "Hi"})), \
          patch("app.services.card_service.CardService.generate_text_card", return_value="Card"):
         await generate_card_callback(mock_update, mock_context)
         assert_msg_contains(mock_update.callback_query.message.reply_text, "Card")

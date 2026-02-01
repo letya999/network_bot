@@ -7,15 +7,16 @@ import uuid
 import json
 
 @pytest.fixture
-def mock_gemini(monkeypatch):
+def mock_ai(monkeypatch):
     mock = MagicMock()
     mock.extract_contact_data = AsyncMock()
     mock.get_prompt = MagicMock(return_value="Prompt template {profile_a} {profile_b}")
-    monkeypatch.setattr("app.services.match_service.GeminiService", lambda: mock)
+    # Update to return this mock when AIService is instantiated
+    monkeypatch.setattr("app.services.match_service.AIService", lambda **kwargs: mock)
     return mock
 
 @pytest.mark.asyncio
-async def test_format_contact_context_with_osint(mock_session, mock_gemini):
+async def test_format_contact_context_with_osint(mock_session, mock_ai):
     service = MatchService(mock_session)
     contact = Contact(
         id=uuid.uuid4(),
@@ -51,12 +52,12 @@ async def test_format_contact_context_with_osint(mock_session, mock_gemini):
     assert "Boston" in formatted
 
 @pytest.mark.asyncio
-async def test_match_service_get_user_matches(mock_session, mock_gemini):
+async def test_match_service_get_user_matches(mock_session, mock_ai):
     service = MatchService(mock_session)
     user = User(id=uuid.uuid4(), profile_data={"bio": "AI expert"})
     contact = Contact(id=uuid.uuid4(), name="Target", what_looking_for="AI help")
     
-    mock_gemini.extract_contact_data.return_value = {
+    mock_ai.extract_contact_data.return_value = {
         "is_match": True,
         "match_score": 90,
         "synergy_summary": "Both like AI",
@@ -67,10 +68,10 @@ async def test_match_service_get_user_matches(mock_session, mock_gemini):
     
     assert result["is_match"] is True
     assert result["match_score"] == 90
-    mock_gemini.extract_contact_data.assert_called_once()
+    mock_ai.extract_contact_data.assert_called_once()
 
 @pytest.mark.asyncio
-async def test_match_service_find_peer_matches(mock_session, mock_gemini):
+async def test_match_service_find_peer_matches(mock_session, mock_ai):
     service = MatchService(mock_session)
     contact = Contact(
         id=uuid.uuid4(), 
@@ -95,7 +96,7 @@ async def test_match_service_find_peer_matches(mock_session, mock_gemini):
     # First call is contacts, subsequent are cache checks
     mock_session.execute.side_effect = [mock_contacts_result, mock_cache_result, mock_cache_result]
     
-    mock_gemini.extract_contact_data.return_value = {
+    mock_ai.extract_contact_data.return_value = {
         "is_match": True,
         "match_score": 85,
         "synergy_summary": "Both lived in Berlin"
@@ -107,12 +108,12 @@ async def test_match_service_find_peer_matches(mock_session, mock_gemini):
     assert matches[0]["peer_name"] == "Person B"
     
     # Verify proper context was passed (implicit check via mock call being successful)
-    call_args = mock_gemini.extract_contact_data.call_args[1]
+    call_args = mock_ai.extract_contact_data.call_args[1]
     # We can't easily check the prompt content because it's replaced in the method, 
     # but we can assume if the match returned True, the logic flowed correctly.
 
 @pytest.mark.asyncio
-async def test_match_service_semantic_search(mock_session, mock_gemini):
+async def test_match_service_semantic_search(mock_session, mock_ai):
     service = MatchService(mock_session)
     user_id = uuid.uuid4()
     
@@ -121,7 +122,7 @@ async def test_match_service_semantic_search(mock_session, mock_gemini):
     mock_result.scalars.return_value.all.return_value = [c1]
     mock_session.execute.return_value = mock_result
     
-    mock_gemini.extract_contact_data.return_value = {
+    mock_ai.extract_contact_data.return_value = {
         "matches": [{"contact_id": str(c1.id), "reason": "Expert"}]
     }
     

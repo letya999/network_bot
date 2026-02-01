@@ -17,29 +17,57 @@ def assert_msg_contains(mock_reply_text, substring):
         if substring in call[0][0]:
             found = True
             break
-    assert found, f"Message containing '{substring}' not found"
+    assert found, f"Message containing '{substring}' not found. Calls: {mock_reply_text.call_args_list}"
 
 @pytest.mark.asyncio
 async def test_handle_text_contact_creation(mock_update, mock_context):
     mock_update.message.text = "John Doe @johndoe"
     mock_data = {"name": "John Doe", "telegram_username": "johndoe"}
     
-    with patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value=mock_data)), \
+    # Mock AIService
+    mock_ai_instance = MagicMock()
+    mock_ai_instance.extract_contact_data = AsyncMock(return_value=mock_data)
+    
+    with patch("app.bot.handlers.contact_handlers.AIService", return_value=mock_ai_instance) as MockAI, \
          patch("app.bot.handlers.contact_handlers.extract_contact_info", return_value={"telegram_username": "johndoe"}), \
          patch("app.services.contact_service.ContactService.find_by_identifiers", AsyncMock(return_value=None)), \
-         patch("app.services.contact_service.ContactService.create_contact", AsyncMock(return_value=Contact(**mock_data))):
+         patch("app.services.contact_service.ContactService.create_contact", AsyncMock(return_value=Contact(**mock_data))), \
+         patch("app.bot.handlers.contact_handlers.UserService") as MockUserService, \
+         patch("app.bot.handlers.contact_handlers.AsyncSessionLocal") as session_ctx:
+
+        # Setup User Service to return settings
+        mock_user = MagicMock(id=uuid.uuid4(), custom_prompt=None)
+        mock_user.settings = {"ai_provider": "openai", "openai_api_key": "sk-...", "gemini_api_key": "A..."}
+        mock_user_service = MockUserService.return_value
+        mock_user_service.get_or_create_user = AsyncMock(return_value=mock_user)
         
+        session_ctx.return_value.__aenter__.return_value = AsyncMock()
+
         mock_context.bot.get_chat = AsyncMock(return_value=MagicMock(username="johndoe"))
+        
         await handle_text_message(mock_update, mock_context)
+        
+        # Verify AIService initialized with keys from settings
+        MockAI.assert_called_with(
+            gemini_api_key="A...",
+            openai_api_key="sk-...",
+            preferred_provider="openai"
+        )
         assert_msg_contains(mock_update.message.reply_text, "Contact saved")
 
 @pytest.mark.asyncio
 async def test_handle_contact_shared(mock_update, mock_context):
     mock_update.message.contact = MagicMock(phone_number="+123", first_name="John")
+    mock_contact = Contact(name="John", phone="+123", id=uuid.uuid4())
+    
     with patch("app.services.contact_service.ContactService.find_by_identifiers", AsyncMock(return_value=None)), \
-         patch("app.services.contact_service.ContactService.create_contact", AsyncMock(return_value=Contact(name="John", phone="+123"))):
-        await handle_contact(mock_update, mock_context)
-        assert_msg_contains(mock_update.message.reply_text, "John")
+         patch("app.services.contact_service.ContactService.create_contact", AsyncMock(return_value=mock_contact)), \
+         patch("app.bot.handlers.contact_handlers.UserService") as MockUserService, \
+         patch("app.bot.handlers.contact_handlers.AsyncSessionLocal"):
+            
+             MockUserService.return_value.get_or_create_user = AsyncMock(return_value=MagicMock(id=uuid.uuid4()))
+             await handle_contact(mock_update, mock_context)
+             assert_msg_contains(mock_update.message.reply_text, "John")
 
 @pytest.mark.asyncio
 async def test_handle_voice_merge(mock_update, mock_context):
@@ -52,7 +80,10 @@ async def test_handle_voice_merge(mock_update, mock_context):
         mock_open.return_value.__enter__.return_value.read.return_value = b'OggS'
         
         # Mock other dependencies
-        with patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value={"agreements": ["Test"]})), \
+        mock_ai_instance = MagicMock()
+        mock_ai_instance.extract_contact_data = AsyncMock(return_value={"agreements": ["Test"]})
+
+        with patch("app.bot.handlers.contact_handlers.AIService", return_value=mock_ai_instance), \
              patch("os.path.exists", return_value=True), patch("os.remove"), patch("os.rmdir"), patch("tempfile.mkdtemp", return_value="tmp"), \
              patch("app.bot.handlers.contact_handlers.ContactMergeService") as MockMergeService:
             
@@ -74,7 +105,7 @@ async def test_handle_voice_merge(mock_update, mock_context):
             
             with patch("app.bot.handlers.contact_handlers.AsyncSessionLocal", return_value=mock_session_ctx), \
                  patch("app.bot.handlers.contact_handlers.UserService") as MockUserService:
-
+                
                 # Setup mock user service
                 mock_user_service = MockUserService.return_value
                 mock_user_service.get_or_create_user = AsyncMock(return_value=MagicMock(id=uuid.uuid4(), custom_prompt=None))

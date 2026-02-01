@@ -10,7 +10,7 @@ async def test_handle_text_gemini_quota_exceeded(mock_update, mock_context):
     
     with patch("app.bot.handlers.contact_handlers.AsyncSessionLocal"), \
          patch("app.bot.handlers.contact_handlers.UserService") as MockUserService, \
-         patch("app.bot.handlers.contact_handlers.GeminiService") as MockGemini:
+         patch("app.bot.handlers.contact_handlers.AIService") as MockGemini:
          
          mock_user = MagicMock(id=uuid.uuid4(), custom_prompt=None)
          MockUserService.return_value.get_or_create_user = AsyncMock(return_value=mock_user)
@@ -40,7 +40,7 @@ async def test_handle_text_explicit_edit_name(mock_update, mock_context):
     with patch("app.bot.handlers.contact_handlers.AsyncSessionLocal"), \
          patch("app.bot.handlers.contact_handlers.UserService") as MockUserService, \
          patch("app.bot.handlers.contact_handlers.ContactService") as MockContactService, \
-         patch("app.bot.handlers.contact_handlers.GeminiService") as MockGemini:
+         patch("app.bot.handlers.contact_handlers.AIService") as MockGemini:
          
          mock_user = MagicMock(id=uuid.uuid4())
          MockUserService.return_value.get_or_create_user = AsyncMock(return_value=mock_user)

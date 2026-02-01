@@ -47,7 +47,7 @@ async def test_triangulation_notification_on_voice_contact(mock_update, mock_con
     
     with patch("app.bot.handlers.contact_handlers.rate_limit_middleware", AsyncMock(return_value=True)), \
          patch("app.bot.handlers.contact_handlers.UserService") as MockUserSvc, \
-         patch("app.bot.handlers.contact_handlers.GeminiService") as MockGemini, \
+         patch("app.bot.handlers.contact_handlers.AIService") as MockGemini, \
          patch("app.bot.handlers.contact_handlers.ContactMergeService") as MockMerge, \
          patch("app.bot.handlers.contact_handlers.notify_match_if_any", AsyncMock()), \
          patch("app.bot.handlers.contact_handlers.PulseService") as MockPulse, \
@@ -110,7 +110,7 @@ async def test_no_triangulation_when_merged(mock_update, mock_context):
     
     with patch("app.bot.handlers.contact_handlers.rate_limit_middleware", AsyncMock(return_value=True)), \
          patch("app.services.user_service.UserService.get_or_create_user", AsyncMock(return_value=db_user)), \
-         patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value={"name": "Alice Johnson", "company": "TechCorp"})), \
+         patch("app.services.ai_service.AIService.extract_contact_data", AsyncMock(return_value={"name": "Alice Johnson", "company": "TechCorp"})), \
          patch("app.services.merge_service.ContactMergeService.process_contact_data", AsyncMock(return_value=(merged_contact, True))), \
          patch("app.services.merge_service.ContactMergeService.is_reminder_only", return_value=False), \
          patch("app.bot.handlers.match_handlers.notify_match_if_any", AsyncMock()), \
@@ -193,7 +193,7 @@ async def test_triangulation_on_text_contact(mock_update, mock_context):
     ]
     
     with patch("app.services.user_service.UserService.get_or_create_user", AsyncMock(return_value=db_user)), \
-         patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value={"name": "Alice Johnson", "company": "TechCorp", "role": "CTO"})), \
+         patch("app.services.ai_service.AIService.extract_contact_data", AsyncMock(return_value={"name": "Alice Johnson", "company": "TechCorp", "role": "CTO"})), \
          patch("app.services.merge_service.ContactMergeService.process_contact_data", AsyncMock(return_value=(new_contact, False))), \
          patch("app.services.merge_service.ContactMergeService.is_reminder_only", return_value=False), \
          patch("app.bot.handlers.match_handlers.notify_match_if_any", AsyncMock()), \
@@ -232,7 +232,7 @@ async def test_no_triangulation_without_company(mock_update, mock_context):
     )
     
     with patch("app.services.user_service.UserService.get_or_create_user", AsyncMock(return_value=db_user)), \
-         patch("app.services.gemini_service.GeminiService.extract_contact_data", AsyncMock(return_value={"name": "Alice Johnson"})), \
+         patch("app.services.ai_service.AIService.extract_contact_data", AsyncMock(return_value={"name": "Alice Johnson"})), \
          patch("app.services.merge_service.ContactMergeService.process_contact_data", AsyncMock(return_value=(new_contact, False))), \
          patch("app.services.merge_service.ContactMergeService.is_reminder_only", return_value=False), \
          patch("app.bot.handlers.match_handlers.notify_match_if_any", AsyncMock()), \
