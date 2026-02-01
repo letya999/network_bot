@@ -62,7 +62,24 @@ async def test_handle_voice_merge(mock_update, mock_context):
             mock_service_instance.process_contact_data = AsyncMock(return_value=(Contact(id=uuid.uuid4(), name="Merged Contact"), True))
             mock_service_instance.is_reminder_only.return_value = False
             
-            await handle_voice(mock_update, mock_context)
+            # Mock Session for post-processing check
+            mock_session = AsyncMock()
+            mock_session.get.return_value = Contact(name="Merged Contact", telegram_username="merged", id=uuid.uuid4())
+            mock_session.close = AsyncMock()
+            
+            # Mock AsyncSessionLocal context manager
+            mock_session_ctx = MagicMock()
+            mock_session_ctx.__aenter__.return_value = mock_session
+            mock_session_ctx.__aexit__.return_value = None
+            
+            with patch("app.bot.handlers.contact_handlers.AsyncSessionLocal", return_value=mock_session_ctx), \
+                 patch("app.bot.handlers.contact_handlers.UserService") as MockUserService:
+
+                # Setup mock user service
+                mock_user_service = MockUserService.return_value
+                mock_user_service.get_or_create_user = AsyncMock(return_value=MagicMock(id=uuid.uuid4(), custom_prompt=None))
+
+                await handle_voice(mock_update, mock_context)
             
             # The status message is returned by the first reply_text call
             status_msg_mock = mock_update.message.reply_text.return_value

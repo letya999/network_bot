@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     
     TELEGRAM_BOT_TOKEN: str
     GEMINI_API_KEY: Optional[str] = None
+    OPENAI_API_KEY: Optional[str] = None
 
     # OSINT & Enrichment Settings
     TAVILY_API_KEY: Optional[str] = None  # Tavily AI Search API Key

@@ -11,10 +11,11 @@ async def test_extract_contact_data_no_api_key():
 
 @pytest.mark.asyncio
 async def test_extract_contact_data_mock():
-    mock_model = AsyncMock()
+    # Setup mock for synchronous generate_content since it's called via to_thread
+    mock_model = MagicMock()
     mock_response = MagicMock()
     mock_response.text = '{"name": "John Doe"}'
-    mock_model.generate_content_async.return_value = mock_response
+    mock_model.generate_content.return_value = mock_response
     
     with patch("google.generativeai.GenerativeModel", return_value=mock_model), \
          patch("app.core.config.settings.GEMINI_API_KEY", "fake"):

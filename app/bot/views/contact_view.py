@@ -162,4 +162,10 @@ def get_contact_keyboard(contact):
     ]
     keyboard.append(row3)
 
+    # Row 4: Back
+    row4 = [
+        InlineKeyboardButton("🔙 Главное меню", callback_data="menu_main")
+    ]
+    keyboard.append(row4)
+
     return InlineKeyboardMarkup(keyboard) if keyboard else None
