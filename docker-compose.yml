@@ -9,7 +9,7 @@ services:
       - redis
     volumes:
       - .:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --reload-exclude ".git" --reload-exclude ".venv" --reload-exclude "__pycache__" --reload-exclude "postgres_data"
 
   bot:
     build: .

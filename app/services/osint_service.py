@@ -343,6 +343,10 @@ For confidence: "high" if multiple sources confirm the data, "medium" if found i
                     enriched += 1
                 await asyncio.sleep(BATCH_ENRICHMENT_DELAY_SECONDS)  # Polite delay
             except Exception as e:
+                try:
+                    await self.session.rollback()
+                except Exception as rb_e:
+                    logger.error(f"Rollback failed during batch enrich: {rb_e}")
                 errors.append(str(e))
         
         return {"status": "success", "enriched": enriched, "errors": errors}

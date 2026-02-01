@@ -192,6 +192,10 @@ async def enrich_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await query.edit_message_text(f"❌ Ошибка: {result.get('message')}")
                     
             except Exception as e:
+                try:
+                    await session.rollback()
+                except Exception:
+                    pass
                 logger.exception(f"Deep enrich error: {e}")
                 await query.edit_message_text("❌ Произошла ошибка при анализе профиля.")
 

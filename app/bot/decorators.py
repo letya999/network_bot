@@ -36,7 +36,10 @@ def with_session(handler: Callable):
                 await session.commit()
                 return result
             except Exception as e:
-                await session.rollback()
+                try:
+                    await session.rollback()
+                except Exception as rollback_err:
+                    logger.error(f"Error during rollback in handler {handler.__name__}: {rollback_err}")
                 logger.exception(f"Error in handler {handler.__name__}: {e}")
                 raise
 

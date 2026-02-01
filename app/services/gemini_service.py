@@ -1,5 +1,6 @@
 import google.generativeai as genai
 from app.core.config import settings
+import asyncio
 import json
 import os
 from typing import Dict, Any, Optional
@@ -64,7 +65,8 @@ class GeminiService:
 
             try:
                 logger.info(f"Uploading audio file: {audio_path} (size: {file_size} bytes)")
-                sample_file = genai.upload_file(path=audio_path, mime_type="audio/ogg")
+                # Use asyncio.to_thread to run sync upload in a separate thread
+                sample_file = await asyncio.to_thread(genai.upload_file, path=audio_path, mime_type="audio/ogg")
                 logger.info(f"Upload successful. File: {sample_file.name}")
                 content.append(sample_file)
             except Exception as e:
@@ -79,7 +81,10 @@ class GeminiService:
         # Generate content
         try:
             logger.info(f"Calling Gemini API with {len(content)} content items")
-            response = await self.model.generate_content_async(
+            # Use run_in_executor/to_thread to run sync generation in separate thread
+            # This avoids any potential event loop blocking or greenlet context issues
+            response = await asyncio.to_thread(
+                self.model.generate_content,
                 content,
                 generation_config=genai.GenerationConfig(
                     response_mime_type="application/json"

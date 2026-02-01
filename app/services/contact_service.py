@@ -152,18 +152,23 @@ class ContactService:
         if not contact:
             return None
         
-        # Smart merge: only update if new value is meaningful
+        # Safe introspection: Get valid column names to avoid touching relationships via hasattr
+        from sqlalchemy import inspect
+        mapper = inspect(Contact)
+        valid_columns = {c.key for c in mapper.column_attrs}
+        
+        # Smart merge: only update if new value is meaningful and is a valid column
         for field, value in data.items():
-            if not hasattr(contact, field):
+            # Skip fields that are not database columns (avoids triggering lazy loads on relationships)
+            if field not in valid_columns:
+                continue
+            
+            # CRITICAL: Do NOT overwrite existing data with None
+            if value is None:
                 continue
                 
-            # Skip None values check removed to allow clearing fields.
-            # if value is None:
-            #    continue
-            
             # For string fields, skip empty strings - don't overwrite existing data
-            # But allow None to clear
-            if value is not None and isinstance(value, str) and not value.strip():
+            if isinstance(value, str) and not value.strip():
                 continue
             
             # Special case: don't overwrite a real name with "Неизвестно"

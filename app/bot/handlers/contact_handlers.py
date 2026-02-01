@@ -19,6 +19,7 @@ from app.bot.handlers.match_handlers import notify_match_if_any
 from app.bot.views import format_card, get_contact_keyboard
 import dateparser
 from datetime import datetime, timedelta
+from app.models.contact import Contact
 
 logger = logging.getLogger(__name__)
 
@@ -70,84 +71,146 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         gemini = GeminiService()
         
-        async with AsyncSessionLocal() as session:
-            user_service = UserService(session)
-            db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
-            
-            data = await gemini.extract_contact_data(audio_path=file_path, prompt_template=db_user.custom_prompt)
-            
-            if data.get("error"):
+        # 1. Fetch User Config (Short DB session)
+        custom_prompt = None
+        user_id_for_context = None
+        
+        try:
+            async with AsyncSessionLocal() as session:
+                user_service = UserService(session)
+                db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
+                custom_prompt = db_user.custom_prompt
+                user_id_for_context = db_user.id
+        except Exception as e:
+            logger.error(f"Error fetching user config: {e}")
+            # Non-critical, continue with default prompt
+
+        # 2. AI Extraction (No active DB session) - Heavy blocking operation
+        data = await gemini.extract_contact_data(audio_path=file_path, prompt_template=custom_prompt)
+        
+        if data.get("error"):
+             if not status_msg_deleted:
                  await status_msg.edit_text(f"❌ Processing error (possible AI limit): {data.get('error')}")
-                 return
+             return
 
-            _apply_event_context(data, context)
-            
-            merge_service = ContactMergeService(session)
+        _apply_event_context(data, context)
+        
+        # 3. Save and Merge (Write Session) - Fast transaction
+        contact_id = None
+        was_merged = False
+        triangulation_msg = None
+        reminders_created = 0
+        is_reminder_only = False
+        
+        try:
+            async with AsyncSessionLocal() as session:
+                user_service = UserService(session)
+                db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
+                merge_service = ContactMergeService(session)
 
-            if merge_service.is_reminder_only(data):
-                # Standalone Reminder logic
-                reminder_service = ReminderService(session)
-                count = 0
-                for rem in data.get("reminders", []):
-                    try:
-                        due_date = dateparser.parse(rem.get("due_date", ""), settings={'PREFER_DATES_FROM': 'future'})
-                        if not due_date or due_date < datetime.now():
-                             due_date = datetime.now() + timedelta(days=1)
-                             
-                        await reminder_service.create_reminder(
-                            user_id=db_user.id,
-                            title=rem.get("title", "Reminder"),
-                            due_at=due_date,
-                            description=rem.get("description")
-                        )
-                        count += 1
-                    except Exception:
-                        logger.exception("Error creating reminder")
-                
-                await status_msg.delete()
-                status_msg_deleted = True
-                await update.message.reply_text(f"✅ Reminders created: {count}")
-                return
+                if merge_service.is_reminder_only(data):
+                    is_reminder_only = True
+                    reminder_service = ReminderService(session)
+                    for rem in data.get("reminders", []):
+                        try:
+                            due_date = dateparser.parse(rem.get("due_date", ""), settings={'PREFER_DATES_FROM': 'future'})
+                            if not due_date or due_date < datetime.now():
+                                 due_date = datetime.now() + timedelta(days=1)
+                            await reminder_service.create_reminder(
+                                user_id=db_user.id,
+                                title=rem.get("title", "Reminder"),
+                                due_at=due_date,
+                                description=rem.get("description")
+                            )
+                            reminders_created += 1
+                        except Exception:
+                            logger.exception("Error creating reminder")
+                else:
+                    # Normal Contact Process
+                    # Pass context.user_data to allow merging with previous contact (Link -> Voice flow)
+                    contact, was_merged = await merge_service.process_contact_data(db_user.id, data, context.user_data)
+                    if contact:
+                        contact_id = contact.id
+                        
+                        # Triangulation detection (Relationship Pulse)
+                        if not was_merged:
+                            pulse_service = PulseService(session)
+                            triangulation_contacts = await pulse_service.detect_company_triangulation(db_user.id, contact)
+                            if triangulation_contacts:
+                                triangulation_msg = pulse_service.generate_triangulation_message(contact, triangulation_contacts)
 
-            # Process with Merge Service
-            contact, was_merged = await merge_service.process_contact_data(db_user.id, data, context.user_data)
-            
-            if was_merged:
-                await status_msg.edit_text("🔗 Merged with recent contact!")
-            else:
-                await status_msg.delete()
-                status_msg_deleted = True
-            
-            # Update last context
-            context.user_data["last_contact_id"] = contact.id
-            context.user_data["last_contact_time"] = time.time()
-            
-            # Match notification
-            await notify_match_if_any(update, contact, db_user, session)
-            
-            # Triangulation detection (Relationship Pulse)
-            if contact and not was_merged:
-                pulse_service = PulseService(session)
-                triangulation_contacts = await pulse_service.detect_company_triangulation(db_user.id, contact)
-                if triangulation_contacts:
-                    triangulation_msg = pulse_service.generate_triangulation_message(contact, triangulation_contacts)
-                    await update.message.reply_text(triangulation_msg, parse_mode="Markdown")
+        except Exception as e:
+            logger.exception("Database error in handle_voice logic")
+            if not status_msg_deleted:
+                await status_msg.edit_text("❌ An error occurred while saving data.")
+            return
 
-            if contact:
-                card = format_card(contact)
-                keyboard = get_contact_keyboard(contact)
-                await update.message.reply_text(
-                    card, parse_mode="HTML", reply_markup=keyboard,
-                    disable_web_page_preview=True
-                )
+        # 4. Post-Processing & Notification (Read-Only Logic)
+        if is_reminder_only:
+            await status_msg.delete()
+            status_msg_deleted = True
+            await update.message.reply_text(f"✅ Reminders created: {reminders_created}")
+            return
 
-    except Exception:
-        logger.exception("Error handling voice")
-        if not status_msg_deleted:
+        if was_merged:
             try:
-                await status_msg.edit_text("❌ An error occurred during processing. Please try again.")
+                await status_msg.edit_text("🔗 Merged with recent contact!")
             except Exception:
-                await update.message.reply_text("❌ An error occurred during processing. Please try again.")
+                pass
+        else:
+            try:
+                await status_msg.delete()
+                status_msg_deleted = True
+            except Exception:
+                pass
+        
+        # Update context for next interactions
+        if contact_id:
+            context.user_data["last_contact_id"] = contact_id
+            context.user_data["last_contact_time"] = time.time()
+
+        if triangulation_msg:
+             await update.message.reply_text(triangulation_msg, parse_mode="HTML")
+
+        # Visuals and Matches (New Read Session)
+        if contact_id:
+            try:
+                async with AsyncSessionLocal() as session:
+                     contact = await session.get(Contact, contact_id)
+                     user_service = UserService(session)
+                     db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
+                     
+                     if contact and db_user:
+                        # 1. Send Card FIRST (Priority)
+                        try:
+                            card = format_card(contact)
+                            keyboard = get_contact_keyboard(contact)
+                            await update.message.reply_text(
+                                card, parse_mode="HTML", reply_markup=keyboard,
+                                disable_web_page_preview=True
+                            )
+                        except Exception as e:
+                             logger.error(f"Error sending card: {e}")
+                             await update.message.reply_text("✅ Saved, but error displaying card.")
+
+                        # 2. Match notification (Secondary, shouldn't block card)
+                        try:
+                            await notify_match_if_any(update, contact, db_user, session)
+                        except Exception as e:
+                            logger.error(f"Error in match notification: {e}")
+            except Exception as e:
+                logger.error(f"Error in post-processing: {e}")
+                await update.message.reply_text("✅ Saved (display error).")
+            except Exception as e:
+                logger.error(f"Error in post-processing: {e}")
+                
+    except Exception as e:
+        logger.exception("Error handling voice top level")
+        if not status_msg_deleted:
+             try:
+                 await status_msg.edit_text("❌ Processing error.")
+             except Exception:
+                 pass
     finally:
         try:
             if os.path.exists(file_path):
@@ -246,15 +309,23 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
             error_msg = data.get("error")
             if regex_data:
                 data = regex_data
-                # Ensure minimal fields
+                # Ensure minimal fields and explicit separation for fallback
                 if "name" not in data:
                     data["name"] = "New Contact"
-                data["notes"] = f"⚠️ Retrieved during AI failure: {text[:50]}..."
+                data["notes"] = f"⚠️ Retrieved via Regex (AI Limit). Content: {text[:50]}..."
                 
+                # CRITICAL: If we are falling back to Regex, we should probably NOT merge deeply 
+                # with previous context if the regex data is very sparse (just a username), 
+                # to avoid appending a new person to an old person's card.
+                # But 'merge_service' handles the decision.
+                # We flag this as 'low_confidence_fallback' optionally?
+                # For now, let's just make the error message clearer.
+
                 await update.message.reply_text(
-                    f"⚠️ <b>AI limit exceeded or error.</b>\n"
-                    f"Saving what could be extracted via templates (Regex).\n"
-                    f"Error: {error_msg}",
+                    f"⚠️ <b>Google Gemini AI Quota Exceeded.</b>\n"
+                    f"The bot is falling back to simple pattern matching.\n"
+                    f"This might lead to less accurate merges.\n\n"
+                    f"<b>Error:</b> {error_msg}",
                     parse_mode="HTML"
                 )
             else:
