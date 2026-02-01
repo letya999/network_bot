@@ -49,7 +49,8 @@ async def enrich_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             session,
             tavily_api_key=user_settings.get("tavily_api_key"),
             gemini_api_key=user_settings.get("gemini_api_key"),
-            openai_api_key=user_settings.get("openai_api_key")
+            openai_api_key=user_settings.get("openai_api_key"),
+            preferred_provider=user_settings.get("ai_provider")
         )
 
         contact = None
@@ -138,7 +139,8 @@ async def enrich_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     session,
                     tavily_api_key=user_settings.get("tavily_api_key"),
                     gemini_api_key=user_settings.get("gemini_api_key"),
-                    openai_api_key=user_settings.get("openai_api_key")
+                    openai_api_key=user_settings.get("openai_api_key"),
+                    preferred_provider=user_settings.get("ai_provider")
                  )
                  await query.edit_message_text(f"🕵️‍♂️ Ищу профили *{contact.name}*...", parse_mode="Markdown")
                  candidates = await osint_service.search_potential_profiles(contact.id)
@@ -179,7 +181,8 @@ async def enrich_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 session,
                 tavily_api_key=user_settings.get("tavily_api_key"),
                 gemini_api_key=user_settings.get("gemini_api_key"),
-                openai_api_key=user_settings.get("openai_api_key")
+                openai_api_key=user_settings.get("openai_api_key"),
+                preferred_provider=user_settings.get("ai_provider")
             )
             try:
                 result = await osint_service.enrich_contact_final(uuid.UUID(contact_id), linkedin_url)
@@ -418,7 +421,8 @@ async def batch_enrich_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 session,
                 tavily_api_key=user_settings.get("tavily_api_key"),
                 gemini_api_key=user_settings.get("gemini_api_key"),
-                openai_api_key=user_settings.get("openai_api_key")
+                openai_api_key=user_settings.get("openai_api_key"),
+                preferred_provider=user_settings.get("ai_provider")
             )
             result = await osint_service.batch_enrich(db_user.id, limit=5)
 

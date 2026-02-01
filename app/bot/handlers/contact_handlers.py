@@ -73,6 +73,9 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         # 1. Fetch User Config (Short DB session)
         custom_prompt = None
+        preferred_provider = None
+        gemini_key = None
+        openai_key = None
         user_id_for_context = None
         
         try:
@@ -80,12 +83,17 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 user_service = UserService(session)
                 db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
                 custom_prompt = db_user.custom_prompt
+                settings = db_user.settings or {}
+                preferred_provider = settings.get("ai_provider")
+                gemini_key = settings.get("gemini_api_key")
+                openai_key = settings.get("openai_api_key")
                 user_id_for_context = db_user.id
         except Exception as e:
             logger.error(f"Error fetching user config: {e}")
             # Non-critical, continue with default prompt
 
         # 2. AI Extraction (No active DB session) - Heavy blocking operation
+        ai = AIService(gemini_api_key=gemini_key, openai_api_key=openai_key, preferred_provider=preferred_provider)
         data = await ai.extract_contact_data(audio_path=file_path, prompt_template=custom_prompt)
         
         if data.get("error"):
@@ -301,7 +309,12 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_service = UserService(session)
         db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
         
-        ai = AIService()
+        settings = db_user.settings or {}
+        ai = AIService(
+            gemini_api_key=settings.get("gemini_api_key"),
+            openai_api_key=settings.get("openai_api_key"),
+            preferred_provider=settings.get("ai_provider")
+        )
         data = await ai.extract_contact_data(text=text, prompt_template=db_user.custom_prompt)
         
         # Check for Critical API Errors (e.g. Quota Exceeded)

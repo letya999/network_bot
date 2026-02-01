@@ -137,11 +137,13 @@ async def _generate_and_send_card(
              user = await user_service.get_user(user_telegram_id)
              api_key = None
              openai_key = None
+             preferred_provider = None
              if user and user.settings:
                  api_key = user.settings.get("gemini_api_key")
                  openai_key = user.settings.get("openai_api_key")
+                 preferred_provider = user.settings.get("ai_provider")
         
-        ai = AIService(gemini_api_key=api_key, openai_api_key=openai_key)
+        ai = AIService(gemini_api_key=api_key, openai_api_key=openai_key, preferred_provider=preferred_provider)
         
         # Prepare contextual information
         target_info = [f"Name: {target_contact.name}"]

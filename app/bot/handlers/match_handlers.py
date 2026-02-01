@@ -71,8 +71,15 @@ async def find_matches_command(update: Update, context: ContextTypes.DEFAULT_TYP
         from html import escape
         from app.bot.handlers.menu_handlers import NETWORKING_MENU
         from app.bot.handlers.contact_detail_handlers import CONTACT_VIEW_PREFIX
-
-        match_service = MatchService(session)
+        
+        settings = db_user.settings or {}
+        preferred_provider = settings.get("ai_provider")
+        match_service = MatchService(
+            session, 
+            preferred_provider=preferred_provider,
+            gemini_api_key=settings.get("gemini_api_key"),
+            openai_api_key=settings.get("openai_api_key")
+        )
         response = ""
         back_button = []
 
@@ -169,7 +176,17 @@ async def semantic_search_handler(update: Update, context: ContextTypes.DEFAULT_
             await update.message.reply_text(text, reply_markup=reply_markup)
         else:
             # Fallback to semantic search immediately
-            await perform_semantic_search(update.message, query, db_user.id, session)
+            # Fallback to semantic search immediately
+            settings = db_user.settings or {}
+            await perform_semantic_search(
+                update.message, 
+                query, 
+                db_user.id, 
+                session,
+                preferred_provider=settings.get("ai_provider"),
+                gemini_api_key=settings.get("gemini_api_key"),
+                openai_api_key=settings.get("openai_api_key")
+            )
 
 async def semantic_search_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query_data = update.callback_query.data
@@ -182,12 +199,27 @@ async def semantic_search_callback(update: Update, context: ContextTypes.DEFAULT
         user_service = UserService(session)
         user = update.effective_user
         db_user = await user_service.get_or_create_user(user.id, username=user.username, first_name=user.full_name)
-        await perform_semantic_search(update.callback_query.message, query_text, db_user.id, session)
+        settings = db_user.settings or {}
+        preferred_provider = settings.get("ai_provider")
+        await perform_semantic_search(
+            update.callback_query.message, 
+            query_text, 
+            db_user.id, 
+            session, 
+            preferred_provider=preferred_provider,
+            gemini_api_key=settings.get("gemini_api_key"),
+            openai_api_key=settings.get("openai_api_key")
+        )
 
-async def perform_semantic_search(message, query, user_id, session):
+async def perform_semantic_search(message, query, user_id, session, preferred_provider=None, gemini_api_key=None, openai_api_key=None):
     placeholder = await message.reply_text("🧠 AI анализирует твои контакты...")
     
-    match_service = MatchService(session)
+    match_service = MatchService(
+        session, 
+        preferred_provider=preferred_provider,
+        gemini_api_key=gemini_api_key,
+        openai_api_key=openai_api_key
+    )
     matches = await match_service.semantic_search(user_id, query)
     
     await placeholder.delete()
@@ -214,7 +246,14 @@ async def notify_match_if_any(update: Update, contact, user, session):
     """
     Helper to notify user about a match immediately after adding a contact.
     """
-    match_service = MatchService(session)
+    settings = user.settings or {} if hasattr(user, "settings") else {}
+    preferred_provider = settings.get("ai_provider")
+    match_service = MatchService(
+        session, 
+        preferred_provider=preferred_provider,
+        gemini_api_key=settings.get("gemini_api_key"),
+        openai_api_key=settings.get("openai_api_key")
+    )
     match_data = await match_service.get_user_matches(contact, user)
     
     if match_data.get("is_match") and match_data.get("match_score", 0) > 70:

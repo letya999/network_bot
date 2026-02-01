@@ -14,9 +14,9 @@ from app.config.constants import MAX_SEMANTIC_SEARCH_CONTACTS
 logger = logging.getLogger(__name__)
 
 class MatchService:
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession, preferred_provider: str = None, gemini_api_key: str = None, openai_api_key: str = None):
         self.session = session
-        self.ai = AIService()
+        self.ai = AIService(preferred_provider=preferred_provider, gemini_api_key=gemini_api_key, openai_api_key=openai_api_key)
 
     def _format_contact_context(self, contact: Contact) -> str:
         """

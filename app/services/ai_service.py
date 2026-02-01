@@ -11,7 +11,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 class AIService:
-    def __init__(self, gemini_api_key: str = None, openai_api_key: str = None):
+    def __init__(self, gemini_api_key: str = None, openai_api_key: str = None, preferred_provider: str = None):
         self.provider = None
         self.gemini_model = None
         self.openai_client = None
@@ -19,28 +19,35 @@ class AIService:
         g_key = gemini_api_key or settings.GEMINI_API_KEY
         o_key = openai_api_key or settings.OPENAI_API_KEY
 
-        # Try Gemini first
-        if g_key:
-            try:
-                genai.configure(api_key=g_key)
-                # Using 'gemini-1.5-flash' or similar recent model.
-                # Original code used 'gemini-flash-latest'
-                self.gemini_model = genai.GenerativeModel('gemini-flash-latest')
-                self.provider = "gemini"
-                logger.info("AIService initialized with Gemini")
-            except Exception as e:
-                logger.error(f"Failed to configure Gemini: {e}")
-                self.gemini_model = None
+        # If preference is set, try that one first
+        providers_to_try = []
+        if preferred_provider:
+            providers_to_try.append(preferred_provider)
+        
+        # Add others as fallbacks
+        for p in ["gemini", "openai"]:
+            if p not in providers_to_try:
+                providers_to_try.append(p)
 
-        # If Gemini not available, try OpenAI
-        if not self.provider and o_key:
-            try:
-                self.openai_client = AsyncOpenAI(api_key=o_key)
-                self.provider = "openai"
-                logger.info("AIService initialized with OpenAI")
-            except Exception as e:
-                logger.error(f"Failed to configure OpenAI: {e}")
-                self.openai_client = None
+        for p in providers_to_try:
+            if p == "gemini" and g_key:
+                try:
+                    genai.configure(api_key=g_key)
+                    self.gemini_model = genai.GenerativeModel('gemini-flash-latest')
+                    self.provider = "gemini"
+                    logger.info("AIService initialized with Gemini")
+                    break
+                except Exception as e:
+                    logger.error(f"Failed to configure Gemini: {e}")
+            
+            elif p == "openai" and o_key:
+                try:
+                    self.openai_client = AsyncOpenAI(api_key=o_key)
+                    self.provider = "openai"
+                    logger.info("AIService initialized with OpenAI")
+                    break
+                except Exception as e:
+                    logger.error(f"Failed to configure OpenAI: {e}")
         
         if not self.provider:
             logger.warning("No AI provider available (GEMINI_API_KEY and OPENAI_API_KEY are missing or invalid)")

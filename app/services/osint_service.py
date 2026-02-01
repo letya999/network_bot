@@ -34,11 +34,11 @@ logger = logging.getLogger(__name__)
 class OSINTService:
     """Service for enriching contacts with OSINT data."""
 
-    def __init__(self, session: AsyncSession, tavily_api_key: str = None, gemini_api_key: str = None, openai_api_key: str = None):
+    def __init__(self, session: AsyncSession, tavily_api_key: str = None, gemini_api_key: str = None, openai_api_key: str = None, preferred_provider: str = None):
         self.session = session
         tavily_key = tavily_api_key or settings.TAVILY_API_KEY
         self.tavily_client = TavilyClient(tavily_key) if tavily_key else None
-        self.ai = AIService(gemini_api_key=gemini_api_key, openai_api_key=openai_api_key)
+        self.ai = AIService(gemini_api_key=gemini_api_key, openai_api_key=openai_api_key, preferred_provider=preferred_provider)
 
     async def _tavily_search(self, query: str, include_domains: List[str] = None) -> List[Dict[str, Any]]:
         """

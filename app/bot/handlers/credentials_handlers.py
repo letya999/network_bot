@@ -18,6 +18,7 @@ SERVICE_OPENAI = "openai"
 SERVICE_NOTION = "notion"
 SERVICE_SHEETS = "sheets"
 SERVICE_AUTO = "auto" # for pasting the whole block
+SERVICE_AI_PROVIDER = "ai_provider"
 
 async def set_credentials_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Start the credentials setup process."""
@@ -34,6 +35,7 @@ async def set_credentials_command(update: Update, context: ContextTypes.DEFAULT_
         [InlineKeyboardButton("📝 Notion", callback_data=SERVICE_NOTION)],
         [InlineKeyboardButton("📊 Google Sheets", callback_data=SERVICE_SHEETS)],
         [InlineKeyboardButton("📄 Вставить всё списком", callback_data=SERVICE_AUTO)],
+        [InlineKeyboardButton("🤖 Выбрать AI провайдера", callback_data=SERVICE_AI_PROVIDER)],
         [InlineKeyboardButton("❌ Отмена", callback_data="cancel")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -54,6 +56,27 @@ async def service_choice_callback(update: Update, context: ContextTypes.DEFAULT_
     
     if choice == "cancel":
         await query.edit_message_text("❌ Настройка отменена.")
+        return ConversationHandler.END
+
+    if choice == "back_to_creds":
+        return await set_credentials_command(update, context)
+
+    if choice.startswith("set_provider_"):
+        provider = choice.replace("set_provider_", "")
+        if provider == "none": provider = None
+        
+        async with AsyncSessionLocal() as session:
+            user_service = UserService(session)
+            db_user = await user_service.get_or_create_user(query.from_user.id)
+            settings_data = db_user.settings or {}
+            settings_data["ai_provider"] = provider
+            db_user.settings = settings_data
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(db_user, "settings")
+            await session.commit()
+        
+        prov_name = "Авторазрешение" if not provider else ("Google Gemini" if provider == "gemini" else "OpenAI GPT")
+        await query.edit_message_text(f"✅ Основным провайдером выбран: *{prov_name}*", parse_mode="Markdown")
         return ConversationHandler.END
 
     context.user_data["creds_service"] = choice
@@ -89,6 +112,21 @@ async def service_choice_callback(update: Update, context: ContextTypes.DEFAULT_
             "OPENAI_API_KEY=...\n"
             "NOTION_API_KEY=..."
         )
+    elif choice == SERVICE_AI_PROVIDER:
+        keyboard = [
+            [InlineKeyboardButton("Gemini (Google)", callback_data="set_provider_gemini")],
+            [InlineKeyboardButton("GPT-4o (OpenAI)", callback_data="set_provider_openai")],
+            [InlineKeyboardButton("Авто (Gemini > OpenAI)", callback_data="set_provider_none")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="back_to_creds")]
+        ]
+        await query.edit_message_text(
+            "🤖 *Выбор основного провайдера*\n\n"
+            "Выберите, какую нейросеть использовать по умолчанию. "
+            "Если основная недоступна или закончились квоты, бот попробует использовать вторую.",
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode="Markdown"
+        )
+        return SELECT_SERVICE
     else:
         msg = "Ошибка выбора."
 
