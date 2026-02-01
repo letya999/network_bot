@@ -4,7 +4,7 @@ import asyncio
 from app.models.contact import Contact
 from app.models.user import User
 from app.models.match import Match
-from app.services.gemini_service import GeminiService
+from app.services.ai_service import AIService
 from typing import List, Dict, Any, Optional
 import uuid
 import json
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class MatchService:
     def __init__(self, session: AsyncSession):
         self.session = session
-        self.gemini = GeminiService()
+        self.ai = AIService()
 
     def _format_contact_context(self, contact: Contact) -> str:
         """
@@ -120,11 +120,11 @@ class MatchService:
         profile_a = json.dumps(user_data, ensure_ascii=False)
         profile_b = self._format_contact_context(contact)
         
-        prompt = self.gemini.get_prompt("find_matches")
+        prompt = self.ai.get_prompt("find_matches")
         prompt = prompt.replace("{profile_a}", profile_a).replace("{profile_b}", profile_b)
         
         try:
-            match_data = await self.gemini.extract_contact_data(prompt_template=prompt)
+            match_data = await self.ai.extract_contact_data(prompt_template=prompt)
             return match_data
         except Exception as e:
             logger.exception("Error finding matches")
@@ -191,10 +191,10 @@ class MatchService:
         for peer in peers_needing_ai:
              peer_profile = self._format_contact_context(peer)
              
-             prompt = self.gemini.get_prompt("find_matches")
+             prompt = self.ai.get_prompt("find_matches")
              prompt = prompt.replace("{profile_a}", contact_profile).replace("{profile_b}", peer_profile)
              
-             tasks.append(self.gemini.extract_contact_data(prompt_template=prompt))
+             tasks.append(self.ai.extract_contact_data(prompt_template=prompt))
              peer_idx_map.append(peer)
 
         if tasks:
@@ -301,7 +301,7 @@ class MatchService:
         """
         
         try:
-            search_results = await self.gemini.extract_contact_data(prompt_template=prompt)
+            search_results = await self.ai.extract_contact_data(prompt_template=prompt)
             return search_results.get("matches", [])
         except Exception:
             logger.exception("Semantic search error")

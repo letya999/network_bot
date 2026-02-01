@@ -5,7 +5,7 @@ from app.db.session import AsyncSessionLocal
 from app.services.user_service import UserService
 from app.services.profile_service import ProfileService
 from app.services.card_service import CardService
-from app.services.gemini_service import GeminiService
+from app.services.ai_service import AIService
 from app.models.contact import Contact
 
 logger = logging.getLogger(__name__)
@@ -136,10 +136,12 @@ async def _generate_and_send_card(
              user_service = UserService(session)
              user = await user_service.get_user(user_telegram_id)
              api_key = None
+             openai_key = None
              if user and user.settings:
                  api_key = user.settings.get("gemini_api_key")
+                 openai_key = user.settings.get("openai_api_key")
         
-        gemini = GeminiService(api_key=api_key)
+        ai = AIService(gemini_api_key=api_key, openai_api_key=openai_key)
         
         # Prepare contextual information
         target_info = [f"Name: {target_contact.name}"]
@@ -159,7 +161,7 @@ async def _generate_and_send_card(
         if selected_pitch:
             my_info.append(f"Pitch: {selected_pitch}")
         
-        generated_content = await gemini.customize_card_intro("\n".join(my_info), "\n".join(target_info))
+        generated_content = await ai.customize_card_intro("\n".join(my_info), "\n".join(target_info))
         
         intro_text = generated_content.get("message", "Привет!")
         strategy_text = generated_content.get("strategy", "")

@@ -9,7 +9,7 @@ from telegram.ext import ContextTypes
 from app.db.session import AsyncSessionLocal
 from app.services.contact_service import ContactService
 from app.services.user_service import UserService
-from app.services.gemini_service import GeminiService
+from app.services.ai_service import AIService
 from app.services.reminder_service import ReminderService
 from app.services.merge_service import ContactMergeService
 from app.services.pulse_service import PulseService
@@ -69,7 +69,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await status_msg.edit_text("❌ Invalid file format.")
                 return
 
-        gemini = GeminiService()
+        ai = AIService()
         
         # 1. Fetch User Config (Short DB session)
         custom_prompt = None
@@ -86,7 +86,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Non-critical, continue with default prompt
 
         # 2. AI Extraction (No active DB session) - Heavy blocking operation
-        data = await gemini.extract_contact_data(audio_path=file_path, prompt_template=custom_prompt)
+        data = await ai.extract_contact_data(audio_path=file_path, prompt_template=custom_prompt)
         
         if data.get("error"):
              if not status_msg_deleted:
@@ -301,8 +301,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         user_service = UserService(session)
         db_user = await user_service.get_or_create_user(user.id, user.username, user.first_name)
         
-        gemini = GeminiService()
-        data = await gemini.extract_contact_data(text=text, prompt_template=db_user.custom_prompt)
+        ai = AIService()
+        data = await ai.extract_contact_data(text=text, prompt_template=db_user.custom_prompt)
         
         # Check for Critical API Errors (e.g. Quota Exceeded)
         if data.get("error"):
@@ -322,7 +322,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
                 # For now, let's just make the error message clearer.
 
                 await update.message.reply_text(
-                    f"⚠️ <b>Google Gemini AI Quota Exceeded.</b>\n"
+                    f"⚠️ <b>AI Service Quota Exceeded.</b>\n"
                     f"The bot is falling back to simple pattern matching.\n"
                     f"This might lead to less accurate merges.\n\n"
                     f"<b>Error:</b> {error_msg}",

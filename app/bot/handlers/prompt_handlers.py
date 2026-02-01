@@ -3,7 +3,7 @@ from telegram import Update
 from telegram.ext import ContextTypes, ConversationHandler
 from app.db.session import AsyncSessionLocal
 from app.services.user_service import UserService
-from app.services.gemini_service import GeminiService
+from app.services.ai_service import AIService
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,8 @@ async def show_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         source = "Custom (Saved in DB)"
         
         if not prompt:
-            gemini = GeminiService()
-            prompt = gemini.get_prompt("extract_contact")
+            ai = AIService()
+            prompt = ai.get_prompt("extract_contact")
             source = "Default (System)"
             
         await message.reply_text(

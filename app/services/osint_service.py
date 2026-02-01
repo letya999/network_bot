@@ -20,7 +20,7 @@ from sqlalchemy import select, func
 
 from app.core.config import settings
 from app.models.contact import Contact
-from app.services.gemini_service import GeminiService
+from app.services.ai_service import AIService
 from app.infrastructure.clients.tavily import TavilyClient
 from app.config.constants import (
     UNKNOWN_CONTACT_NAME,
@@ -34,11 +34,11 @@ logger = logging.getLogger(__name__)
 class OSINTService:
     """Service for enriching contacts with OSINT data."""
 
-    def __init__(self, session: AsyncSession, tavily_api_key: str = None, gemini_api_key: str = None):
+    def __init__(self, session: AsyncSession, tavily_api_key: str = None, gemini_api_key: str = None, openai_api_key: str = None):
         self.session = session
         tavily_key = tavily_api_key or settings.TAVILY_API_KEY
         self.tavily_client = TavilyClient(tavily_key) if tavily_key else None
-        self.gemini = GeminiService(api_key=gemini_api_key)
+        self.ai = AIService(gemini_api_key=gemini_api_key, openai_api_key=openai_api_key)
 
     async def _tavily_search(self, query: str, include_domains: List[str] = None) -> List[Dict[str, Any]]:
         """
@@ -62,36 +62,21 @@ class OSINTService:
         Returns:
             Structured OSINT data dictionary
         """
-        if not self.gemini.model:
-            logger.warning("Gemini not configured - returning raw data")
+        if not self.ai.provider:
+            logger.warning("AI provider not configured - returning raw data")
             return {"raw_results": raw_data, "enriched_at": datetime.now().isoformat()}
 
-        prompt = self.gemini.get_prompt("enrich_osint")
+        prompt = self.ai.get_prompt("enrich_osint")
         if not prompt:
             logger.warning("OSINT prompt not found - using default")
             prompt = self._get_default_osint_prompt()
 
-        # The input data format depends on what enrich_contact passes.
-        # In the new Tavily flow, we pass a specific dict.
-        # We'll just pass whatever raw_data is directly to the prompt as "Input Data".
-        
         try:
-            response = await self.gemini.model.generate_content_async(
-                f"{prompt}\n\nInput Data:\n{json.dumps(raw_data, ensure_ascii=False)}",
-                generation_config={
-                    "response_mime_type": "application/json"
-                }
-            )
+            structured = await self.ai.generate_json(prompt, json.dumps(raw_data, ensure_ascii=False))
+            
+            if structured.get("error"):
+                raise Exception(structured["error"])
 
-            json_str = response.text.strip()
-            if json_str.startswith("```json"):
-                json_str = json_str[7:]
-            if json_str.startswith("```"):
-                json_str = json_str[3:]
-            if json_str.endswith("```"):
-                json_str = json_str[:-3]
-
-            structured = json.loads(json_str)
             structured["enriched_at"] = datetime.now().isoformat()
             return structured
 
