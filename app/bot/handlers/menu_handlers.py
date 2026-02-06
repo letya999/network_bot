@@ -1,8 +1,9 @@
 
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, BotCommand, WebAppInfo
 from telegram.ext import ContextTypes, ConversationHandler
 from app.db.session import AsyncSessionLocal
+from app.core.config import settings
 from app.services.user_service import UserService
 from app.services.profile_service import ProfileService
 from html import escape
@@ -208,6 +209,12 @@ async def get_menu_content(user, menu_type, context):
                 InlineKeyboardButton("⚙️ Настройки", callback_data=SETTINGS_MENU)
             ]
         ]
+        # Add Web App button if domain is configured
+        webapp_url = settings.APP_DOMAIN
+        if webapp_url:
+            keyboard.append([
+                InlineKeyboardButton("🌐 Открыть приложение", web_app=WebAppInfo(url=f"https://{webapp_url}"))
+            ])
         
     elif menu_type == PROFILE_MENU:
         async with AsyncSessionLocal() as session:

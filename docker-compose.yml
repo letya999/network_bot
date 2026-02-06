@@ -34,6 +34,18 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  webapp:
+    build:
+      context: ./webapp
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    depends_on:
+      - app
+    volumes:
+      - ./webapp/src:/app/src
+      - ./webapp/index.html:/app/index.html
+
   redis:
     image: redis:7-alpine
     restart: always

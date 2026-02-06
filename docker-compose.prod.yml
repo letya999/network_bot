@@ -98,6 +98,31 @@ services:
         limits:
           memory: 192M
 
+  webapp:
+    build:
+      context: ./webapp
+      dockerfile: Dockerfile
+    restart: always
+    expose:
+      - "3000"
+    depends_on:
+      - app
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+          cpus: '0.25'
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
+
   nginx:
     image: nginx:alpine
     restart: always
@@ -111,6 +136,7 @@ services:
       - ./certbot/conf:/etc/letsencrypt:ro
     depends_on:
       - app
+      - webapp
     deploy:
       resources:
         limits:
