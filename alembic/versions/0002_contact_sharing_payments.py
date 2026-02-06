@@ -38,6 +38,7 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_subscriptions_user_id'), 'subscriptions', ['user_id'], unique=False)
+    op.create_index('ix_subscription_user_status', 'subscriptions', ['user_id', 'status'], unique=False)
 
     # 2. Payments table
     op.create_table('payments',
@@ -60,6 +61,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_payments_user_id'), 'payments', ['user_id'], unique=False)
+    op.create_index('ix_payment_user_status', 'payments', ['user_id', 'status'], unique=False)
+    op.create_index('ix_payment_status', 'payments', ['status'], unique=False)
+    op.create_index('ix_payment_provider_id', 'payments', ['provider_payment_id'], unique=False)
 
     # 3. Contact shares table
     op.create_table('contact_shares',
@@ -70,13 +74,13 @@ def upgrade() -> None:
         sa.Column('allowed_user_ids', postgresql.ARRAY(postgresql.UUID(as_uuid=True)), nullable=True),
         sa.Column('visible_fields', postgresql.ARRAY(sa.Text()), nullable=True),
         sa.Column('hidden_fields', postgresql.ARRAY(sa.Text()), nullable=True),
-        sa.Column('price_amount', sa.String(length=20), server_default='0', nullable=True),
+        sa.Column('price_amount', sa.Numeric(precision=10, scale=2), server_default='0', nullable=True),
         sa.Column('price_currency', sa.String(length=3), server_default='RUB', nullable=True),
         sa.Column('description', sa.Text(), nullable=True),
         sa.Column('share_token', sa.String(length=64), nullable=True),
         sa.Column('is_active', sa.Boolean(), server_default='true', nullable=True),
-        sa.Column('view_count', sa.String(length=20), server_default='0', nullable=True),
-        sa.Column('purchase_count', sa.String(length=20), server_default='0', nullable=True),
+        sa.Column('view_count', sa.Integer(), server_default='0', nullable=True),
+        sa.Column('purchase_count', sa.Integer(), server_default='0', nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
         sa.ForeignKeyConstraint(['contact_id'], ['contacts.id'], ondelete='CASCADE'),
@@ -100,7 +104,7 @@ def upgrade() -> None:
         sa.Column('seller_id', postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column('copied_contact_id', postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column('payment_id', postgresql.UUID(as_uuid=True), nullable=True),
-        sa.Column('amount_paid', sa.String(length=20), server_default='0', nullable=True),
+        sa.Column('amount_paid', sa.Numeric(precision=10, scale=2), server_default='0', nullable=True),
         sa.Column('currency', sa.String(length=3), server_default='RUB', nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
         sa.ForeignKeyConstraint(['share_id'], ['contact_shares.id']),
@@ -112,11 +116,15 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_contact_purchases_share_id'), 'contact_purchases', ['share_id'], unique=False)
     op.create_index(op.f('ix_contact_purchases_buyer_id'), 'contact_purchases', ['buyer_id'], unique=False)
+    op.create_index(op.f('ix_contact_purchases_seller_id'), 'contact_purchases', ['seller_id'], unique=False)
     op.create_index('ix_purchase_buyer', 'contact_purchases', ['buyer_id', 'share_id'], unique=False)
+    op.create_unique_constraint('uq_purchase_buyer_share', 'contact_purchases', ['buyer_id', 'share_id'])
 
 
 def downgrade() -> None:
+    op.drop_constraint('uq_purchase_buyer_share', 'contact_purchases', type_='unique')
     op.drop_index('ix_purchase_buyer', table_name='contact_purchases')
+    op.drop_index(op.f('ix_contact_purchases_seller_id'), table_name='contact_purchases')
     op.drop_index(op.f('ix_contact_purchases_buyer_id'), table_name='contact_purchases')
     op.drop_index(op.f('ix_contact_purchases_share_id'), table_name='contact_purchases')
     op.drop_table('contact_purchases')
@@ -130,8 +138,12 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_contact_shares_contact_id'), table_name='contact_shares')
     op.drop_table('contact_shares')
 
+    op.drop_index('ix_payment_provider_id', table_name='payments')
+    op.drop_index('ix_payment_status', table_name='payments')
+    op.drop_index('ix_payment_user_status', table_name='payments')
     op.drop_index(op.f('ix_payments_user_id'), table_name='payments')
     op.drop_table('payments')
 
+    op.drop_index('ix_subscription_user_status', table_name='subscriptions')
     op.drop_index(op.f('ix_subscriptions_user_id'), table_name='subscriptions')
     op.drop_table('subscriptions')

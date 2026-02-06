@@ -1,6 +1,7 @@
 import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.api.webhooks import router as webhooks_router
 from app.api.admin import router as admin_router
@@ -21,6 +22,21 @@ app = FastAPI(
     docs_url="/docs" if not settings.APP_DOMAIN else None,
     redoc_url=None,
     lifespan=lifespan,
+)
+
+# CORS: Allow webapp domain only
+allowed_origins = []
+if settings.APP_DOMAIN:
+    allowed_origins.append(f"https://{settings.APP_DOMAIN}")
+else:
+    allowed_origins.append("http://localhost:3000")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PATCH", "DELETE"],
+    allow_headers=["Content-Type", "Authorization", "X-Telegram-Init-Data", "X-Admin-Token"],
 )
 
 # Include routers

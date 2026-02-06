@@ -1,9 +1,11 @@
 import logging
 import secrets
 import uuid
+from decimal import Decimal
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_
+from sqlalchemy import select, update
+from sqlalchemy.orm import selectinload
 from app.models.contact import Contact
 from app.models.contact_share import ContactShare, ShareVisibility, ContactPurchase
 from app.models.payment import Payment
@@ -16,11 +18,11 @@ DEFAULT_VISIBLE_FIELDS = [
 ]
 
 # All possible shareable fields
-ALL_SHAREABLE_FIELDS = [
+ALL_SHAREABLE_FIELDS = frozenset([
     "name", "company", "role", "phone", "email", "telegram_username",
     "linkedin_url", "event_name", "what_looking_for", "can_help_with",
     "topics", "agreements", "follow_up_action"
-]
+])
 
 CONTACT_FIELDS = {
     "phone": "Телефон",
@@ -53,11 +55,20 @@ class SharingService:
         visibility: str = ShareVisibility.PUBLIC.value,
         visible_fields: list = None,
         hidden_fields: list = None,
-        price_amount: str = "0",
+        price_amount: float = 0,
         price_currency: str = "RUB",
         description: str = None,
         allowed_user_ids: list = None,
     ) -> ContactShare:
+        # Validate visibility
+        valid_vis = {v.value for v in ShareVisibility}
+        if visibility not in valid_vis:
+            visibility = ShareVisibility.PUBLIC.value
+
+        # Sanitize field lists
+        safe_visible = [f for f in (visible_fields or DEFAULT_VISIBLE_FIELDS) if f in ALL_SHAREABLE_FIELDS]
+        safe_hidden = [f for f in (hidden_fields or []) if f in ALL_SHAREABLE_FIELDS]
+
         # Check if already shared
         existing = await self.session.execute(
             select(ContactShare).where(
@@ -69,24 +80,23 @@ class SharingService:
         share = existing.scalars().first()
 
         if share:
-            # Update existing share
             share.visibility = visibility
-            share.visible_fields = visible_fields or DEFAULT_VISIBLE_FIELDS
-            share.hidden_fields = hidden_fields or []
-            share.price_amount = price_amount
+            share.visible_fields = safe_visible
+            share.hidden_fields = safe_hidden
+            share.price_amount = Decimal(str(max(0, price_amount)))
             share.price_currency = price_currency
-            share.description = description
+            share.description = (description or "")[:500]
             share.allowed_user_ids = allowed_user_ids or []
         else:
             share = ContactShare(
                 contact_id=contact_id,
                 owner_id=owner_id,
                 visibility=visibility,
-                visible_fields=visible_fields or DEFAULT_VISIBLE_FIELDS,
-                hidden_fields=hidden_fields or [],
-                price_amount=price_amount,
+                visible_fields=safe_visible,
+                hidden_fields=safe_hidden,
+                price_amount=Decimal(str(max(0, price_amount))),
                 price_currency=price_currency,
-                description=description,
+                description=(description or "")[:500],
                 share_token=secrets.token_urlsafe(32),
                 allowed_user_ids=allowed_user_ids or [],
             )
@@ -123,7 +133,11 @@ class SharingService:
         return result.scalars().first()
 
     async def get_user_shares(self, owner_id: uuid.UUID, active_only: bool = True) -> List[ContactShare]:
-        stmt = select(ContactShare).where(ContactShare.owner_id == owner_id)
+        stmt = (
+            select(ContactShare)
+            .options(selectinload(ContactShare.contact))
+            .where(ContactShare.owner_id == owner_id)
+        )
         if active_only:
             stmt = stmt.where(ContactShare.is_active == True)
         stmt = stmt.order_by(ContactShare.created_at.desc())
@@ -133,6 +147,7 @@ class SharingService:
     async def get_public_shares(self, limit: int = 20, offset: int = 0) -> List[ContactShare]:
         stmt = (
             select(ContactShare)
+            .options(selectinload(ContactShare.contact))
             .where(
                 ContactShare.is_active == True,
                 ContactShare.visibility.in_([
@@ -141,7 +156,7 @@ class SharingService:
                 ])
             )
             .order_by(ContactShare.created_at.desc())
-            .limit(limit)
+            .limit(min(limit, 50))
             .offset(offset)
         )
         result = await self.session.execute(stmt)
@@ -156,32 +171,30 @@ class SharingService:
         if share.visibility == ShareVisibility.PRIVATE.value:
             return viewer_user_id in (share.allowed_user_ids or [])
         if share.visibility == ShareVisibility.PAID.value:
-            # Check if they purchased it
-            purchased = await self.has_purchased(share.id, viewer_user_id)
-            return purchased
+            return await self.has_purchased(share.id, viewer_user_id)
         return False
 
     async def has_purchased(self, share_id: uuid.UUID, buyer_id: uuid.UUID) -> bool:
         result = await self.session.execute(
-            select(ContactPurchase).where(
+            select(ContactPurchase.id).where(
                 ContactPurchase.share_id == share_id,
                 ContactPurchase.buyer_id == buyer_id,
-            )
+            ).limit(1)
         )
         return result.scalars().first() is not None
 
     async def get_filtered_contact_data(self, share: ContactShare, contact: Contact) -> Dict[str, Any]:
         """Return contact data filtered by share visibility settings."""
-        data = {}
-        visible = share.visible_fields or ALL_SHAREABLE_FIELDS
-        hidden = share.hidden_fields or []
+        visible = set(share.visible_fields or ALL_SHAREABLE_FIELDS)
+        hidden = set(share.hidden_fields or [])
+        allowed = visible - hidden
 
-        for field in ALL_SHAREABLE_FIELDS:
-            if field in visible and field not in hidden:
+        data = {}
+        for field in allowed:
+            if field in ALL_SHAREABLE_FIELDS:
                 value = getattr(contact, field, None)
                 if value is not None:
                     data[field] = value
-
         return data
 
     async def purchase_contact(
@@ -189,7 +202,7 @@ class SharingService:
         share_id: uuid.UUID,
         buyer_id: uuid.UUID,
         payment_id: uuid.UUID = None,
-        amount_paid: str = "0",
+        amount_paid: float = 0,
         currency: str = "RUB",
     ) -> ContactPurchase:
         """Record a purchase and copy the contact to buyer's list."""
@@ -206,17 +219,17 @@ class SharingService:
             raise ValueError("Original contact not found")
 
         # Create a copy in buyer's account
-        visible = share.visible_fields or ALL_SHAREABLE_FIELDS
-        hidden = share.hidden_fields or []
+        visible = set(share.visible_fields or ALL_SHAREABLE_FIELDS)
+        hidden = set(share.hidden_fields or [])
+        allowed = visible - hidden
 
         copy_data = {}
-        for field in ALL_SHAREABLE_FIELDS:
-            if field in visible and field not in hidden:
+        for field in allowed:
+            if field in ALL_SHAREABLE_FIELDS:
                 value = getattr(original, field, None)
                 if value is not None:
                     copy_data[field] = value
 
-        # Ensure name exists
         if "name" not in copy_data:
             copy_data["name"] = original.name or "Без имени"
 
@@ -245,31 +258,47 @@ class SharingService:
         self.session.add(copied)
         await self.session.flush()
 
-        # Create purchase record
         purchase = ContactPurchase(
             share_id=share_id,
             buyer_id=buyer_id,
             seller_id=share.owner_id,
             copied_contact_id=copied.id,
             payment_id=payment_id,
-            amount_paid=amount_paid,
+            amount_paid=Decimal(str(max(0, amount_paid))),
             currency=currency,
         )
         self.session.add(purchase)
 
-        # Update stats
-        current_count = int(share.purchase_count or "0")
-        share.purchase_count = str(current_count + 1)
+        # Atomic counter increment
+        await self.session.execute(
+            update(ContactShare)
+            .where(ContactShare.id == share_id)
+            .values(purchase_count=ContactShare.purchase_count + 1)
+        )
 
         await self.session.commit()
         await self.session.refresh(purchase)
         return purchase
 
-    async def get_user_purchases(self, buyer_id: uuid.UUID) -> List[ContactPurchase]:
+    async def increment_view_count(self, share_id: uuid.UUID) -> None:
+        """Atomically increment view count."""
+        await self.session.execute(
+            update(ContactShare)
+            .where(ContactShare.id == share_id)
+            .values(view_count=ContactShare.view_count + 1)
+        )
+        await self.session.commit()
+
+    async def get_user_purchases(self, buyer_id: uuid.UUID, limit: int = 50) -> List[ContactPurchase]:
         stmt = (
             select(ContactPurchase)
+            .options(
+                selectinload(ContactPurchase.copied_contact),
+                selectinload(ContactPurchase.seller),
+            )
             .where(ContactPurchase.buyer_id == buyer_id)
             .order_by(ContactPurchase.created_at.desc())
+            .limit(limit)
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()
@@ -277,14 +306,17 @@ class SharingService:
     async def update_field_visibility(
         self, share_id: uuid.UUID, visible_fields: list, hidden_fields: list = None
     ) -> Optional[ContactShare]:
+        safe_visible = [f for f in visible_fields if f in ALL_SHAREABLE_FIELDS]
+        safe_hidden = [f for f in (hidden_fields or []) if f in ALL_SHAREABLE_FIELDS]
+
         result = await self.session.execute(
             select(ContactShare).where(ContactShare.id == share_id)
         )
         share = result.scalars().first()
         if not share:
             return None
-        share.visible_fields = visible_fields
-        share.hidden_fields = hidden_fields or []
+        share.visible_fields = safe_visible
+        share.hidden_fields = safe_hidden
         await self.session.commit()
         await self.session.refresh(share)
         return share

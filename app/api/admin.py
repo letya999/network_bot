@@ -1,6 +1,7 @@
 """Admin API endpoints for dashboard and management."""
+import hmac
 import logging
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Query
 from sqlalchemy import select, func
 from app.db.session import AsyncSessionLocal
 from app.models import User, Contact, Subscription, ContactShare, Payment
@@ -14,9 +15,11 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 def verify_admin_token(x_admin_token: str = Header(None)):
-    """Simple token-based admin auth."""
+    """Timing-safe token-based admin auth."""
     expected = settings.WEBHOOK_SECRET
-    if not expected or x_admin_token != expected:
+    if not expected or not x_admin_token:
+        raise HTTPException(status_code=403, detail="Forbidden")
+    if not hmac.compare_digest(x_admin_token, expected):
         raise HTTPException(status_code=403, detail="Forbidden")
     return True
 
@@ -58,7 +61,11 @@ async def admin_stats(auth: bool = Depends(verify_admin_token)):
 
 
 @router.get("/users")
-async def admin_users(limit: int = 50, offset: int = 0, auth: bool = Depends(verify_admin_token)):
+async def admin_users(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    auth: bool = Depends(verify_admin_token),
+):
     """List users."""
     async with AsyncSessionLocal() as session:
         stmt = select(User).order_by(User.created_at.desc()).limit(limit).offset(offset)
@@ -78,7 +85,10 @@ async def admin_users(limit: int = 50, offset: int = 0, auth: bool = Depends(ver
 
 
 @router.get("/subscriptions")
-async def admin_subscriptions(limit: int = 50, auth: bool = Depends(verify_admin_token)):
+async def admin_subscriptions(
+    limit: int = Query(50, ge=1, le=200),
+    auth: bool = Depends(verify_admin_token),
+):
     """List subscriptions."""
     async with AsyncSessionLocal() as session:
         stmt = select(Subscription).order_by(Subscription.created_at.desc()).limit(limit)
@@ -100,7 +110,10 @@ async def admin_subscriptions(limit: int = 50, auth: bool = Depends(verify_admin
 
 
 @router.get("/payments")
-async def admin_payments(limit: int = 50, auth: bool = Depends(verify_admin_token)):
+async def admin_payments(
+    limit: int = Query(50, ge=1, le=200),
+    auth: bool = Depends(verify_admin_token),
+):
     """List recent payments."""
     async with AsyncSessionLocal() as session:
         stmt = select(Payment).order_by(Payment.created_at.desc()).limit(limit)
@@ -122,7 +135,10 @@ async def admin_payments(limit: int = 50, auth: bool = Depends(verify_admin_toke
 
 
 @router.get("/shares")
-async def admin_shares(limit: int = 50, auth: bool = Depends(verify_admin_token)):
+async def admin_shares(
+    limit: int = Query(50, ge=1, le=200),
+    auth: bool = Depends(verify_admin_token),
+):
     """List active shares."""
     async with AsyncSessionLocal() as session:
         stmt = (

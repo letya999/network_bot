@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, Text, ForeignKey, DateTime, Numeric, func
+from sqlalchemy import Column, String, Text, Index, ForeignKey, DateTime, Numeric, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -42,7 +42,7 @@ class Payment(Base):
     currency = Column(String(3), default="RUB", nullable=False)
 
     # Provider references
-    provider_payment_id = Column(String(255))  # External payment ID
+    provider_payment_id = Column(String(255), index=True)  # External payment ID
     provider_data = Column(JSONB, default={})   # Raw provider response
 
     # Description
@@ -58,3 +58,8 @@ class Payment(Base):
     user = relationship("User", backref="payments")
     subscription = relationship("Subscription", backref="payments")
     contact_share = relationship("ContactShare", backref="payments")
+
+    __table_args__ = (
+        Index('ix_payment_user_status', 'user_id', 'status'),
+        Index('ix_payment_status', 'status'),
+    )

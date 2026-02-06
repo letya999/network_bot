@@ -29,14 +29,22 @@ async function request(path, options = {}) {
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const res = await fetch(url, { ...options, headers })
+  // Request timeout (30s)
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), 30000)
 
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new ApiError(res.status, body.detail || 'Request failed')
+  try {
+    const res = await fetch(url, { ...options, headers, signal: controller.signal })
+
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new ApiError(res.status, body.detail || 'Request failed')
+    }
+
+    return res.json()
+  } finally {
+    clearTimeout(timeoutId)
   }
-
-  return res.json()
 }
 
 class ApiError extends Error {

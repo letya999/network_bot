@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, Text, ForeignKey, DateTime, Boolean, func, Index
+from sqlalchemy import Column, String, Text, Integer, Numeric, ForeignKey, DateTime, Boolean, func, Index, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID, JSONB, ARRAY
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -29,7 +29,7 @@ class ContactShare(Base):
     hidden_fields = Column(ARRAY(Text), default=[])    # Fields explicitly hidden
 
     # Pricing (for PAID visibility)
-    price_amount = Column(String(20), default="0")  # String for flexibility
+    price_amount = Column(Numeric(10, 2), default=0, server_default="0")
     price_currency = Column(String(3), default="RUB")
 
     # Share metadata
@@ -37,9 +37,9 @@ class ContactShare(Base):
     share_token = Column(String(64), unique=True, index=True)  # Unique link token
     is_active = Column(Boolean, default=True)
 
-    # Stats
-    view_count = Column(String(20), default="0")
-    purchase_count = Column(String(20), default="0")
+    # Stats (Integer for atomic increments)
+    view_count = Column(Integer, default=0, server_default="0")
+    purchase_count = Column(Integer, default=0, server_default="0")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
@@ -60,14 +60,14 @@ class ContactPurchase(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     share_id = Column(UUID(as_uuid=True), ForeignKey("contact_shares.id"), nullable=False, index=True)
     buyer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    seller_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    seller_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
 
     # The contact copy created in buyer's account
     copied_contact_id = Column(UUID(as_uuid=True), ForeignKey("contacts.id"), nullable=True)
 
     # Payment info
     payment_id = Column(UUID(as_uuid=True), ForeignKey("payments.id"), nullable=True)
-    amount_paid = Column(String(20), default="0")
+    amount_paid = Column(Numeric(10, 2), default=0, server_default="0")
     currency = Column(String(3), default="RUB")
 
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -79,4 +79,5 @@ class ContactPurchase(Base):
 
     __table_args__ = (
         Index('ix_purchase_buyer', 'buyer_id', 'share_id'),
+        UniqueConstraint('buyer_id', 'share_id', name='uq_purchase_buyer_share'),
     )

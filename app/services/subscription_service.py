@@ -102,13 +102,17 @@ class SubscriptionService:
             sub.status = SubscriptionStatus.EXPIRED.value
             await self.session.commit()
 
-    async def get_expiring_subscriptions(self, within_days: int = 3):
+    async def get_expiring_subscriptions(self, within_days: int = 3, limit: int = 100):
         """Get subscriptions expiring within N days for renewal reminders."""
         cutoff = datetime.utcnow() + timedelta(days=within_days)
-        stmt = select(Subscription).where(
-            Subscription.status == SubscriptionStatus.ACTIVE.value,
-            Subscription.current_period_end <= cutoff,
-            Subscription.current_period_end > datetime.utcnow(),
+        stmt = (
+            select(Subscription)
+            .where(
+                Subscription.status == SubscriptionStatus.ACTIVE.value,
+                Subscription.current_period_end <= cutoff,
+                Subscription.current_period_end > datetime.utcnow(),
+            )
+            .limit(limit)
         )
         result = await self.session.execute(stmt)
         return result.scalars().all()

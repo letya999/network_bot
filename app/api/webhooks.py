@@ -1,4 +1,5 @@
 """Webhook endpoints for payment providers and Telegram."""
+import json
 import logging
 from fastapi import APIRouter, Request, HTTPException
 from app.db.session import AsyncSessionLocal
@@ -16,9 +17,19 @@ router = APIRouter(prefix="/webhooks", tags=["webhooks"])
 async def yookassa_webhook(request: Request):
     """Handle YooKassa payment notifications."""
     try:
-        body = await request.json()
-        event_type = body.get("event")
-        payment_data = body.get("object", {})
+        body = await request.body()
+
+        # Verify webhook signature if configured
+        yookassa = YooKassaService()
+        if yookassa.is_configured:
+            signature = request.headers.get("X-YooKassa-Signature", "")
+            if signature and not yookassa.verify_webhook(body, signature):
+                logger.warning("YooKassa webhook signature verification failed")
+                raise HTTPException(status_code=403, detail="Invalid signature")
+
+        data = json.loads(body)
+        event_type = data.get("event")
+        payment_data = data.get("object", {})
         provider_payment_id = payment_data.get("id")
 
         if not provider_payment_id:
@@ -29,7 +40,7 @@ async def yookassa_webhook(request: Request):
             payment = await payment_service.get_payment_by_provider_id(provider_payment_id)
 
             if not payment:
-                logger.warning(f"YooKassa webhook: payment {provider_payment_id} not found")
+                logger.warning("YooKassa webhook: payment %s not found", provider_payment_id)
                 return {"status": "ok"}
 
             if event_type == "payment.succeeded":
@@ -39,13 +50,11 @@ async def yookassa_webhook(request: Request):
                     provider_data=payment_data,
                 )
 
-                # Handle subscription activation
                 if payment.payment_type == PaymentType.SUBSCRIPTION.value and payment.subscription_id:
                     sub_service = SubscriptionService(session)
                     await sub_service.renew_subscription(payment.subscription_id)
-                    logger.info(f"Subscription {payment.subscription_id} activated via YooKassa")
+                    logger.info("Subscription %s activated via YooKassa", payment.subscription_id)
 
-                # Handle contact purchase
                 elif payment.payment_type == PaymentType.CONTACT_PURCHASE.value and payment.contact_share_id:
                     sharing_service = SharingService(session)
                     share = await sharing_service.get_share_by_id(payment.contact_share_id)
@@ -54,10 +63,10 @@ async def yookassa_webhook(request: Request):
                             share_id=share.id,
                             buyer_id=payment.user_id,
                             payment_id=payment.id,
-                            amount_paid=str(payment.amount),
+                            amount_paid=float(payment.amount or 0),
                             currency=payment.currency,
                         )
-                        logger.info(f"Contact purchase completed via YooKassa for share {share.id}")
+                        logger.info("Contact purchase completed via YooKassa for share %s", share.id)
 
             elif event_type == "payment.canceled":
                 await payment_service.update_payment_status(
@@ -77,6 +86,6 @@ async def yookassa_webhook(request: Request):
 
     except HTTPException:
         raise
-    except Exception as e:
-        logger.exception(f"YooKassa webhook error: {e}")
+    except Exception:
+        logger.exception("YooKassa webhook error")
         return {"status": "error"}

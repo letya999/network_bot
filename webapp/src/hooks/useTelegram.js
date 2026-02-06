@@ -28,9 +28,15 @@ export function useTelegram() {
       document.body.classList.add('tg-theme')
 
       // Listen for theme changes
-      tg.onEvent?.('themeChanged', () => {
+      const handleThemeChanged = () => {
         setColorScheme(tg.colorScheme || 'dark')
-      })
+      }
+      tg.onEvent?.('themeChanged', handleThemeChanged)
+
+      return () => {
+        tg.offEvent?.('themeChanged', handleThemeChanged)
+        document.body.classList.remove('tg-theme')
+      }
     }
   }, [])
 

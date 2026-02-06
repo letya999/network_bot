@@ -6,7 +6,7 @@ import json
 from urllib.parse import parse_qs
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Header, Depends, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select, func
 from app.db.session import AsyncSessionLocal
 from app.models import User, Contact, ContactShare, ContactPurchase, Subscription, Payment
@@ -23,6 +23,9 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/webapp", tags=["webapp"])
+
+VALID_VISIBILITIES = {v.value for v in ShareVisibility}
+VALID_PROVIDERS = {"free", "yookassa", "telegram"}
 
 
 # ========================
@@ -61,14 +64,13 @@ def _parse_telegram_init_data(init_data: str) -> Optional[dict]:
             logger.warning("Telegram initData hash mismatch")
             return None
 
-        # Parse user
         user_json = parsed.get('user', [None])[0]
         if user_json:
             return json.loads(user_json)
         return None
 
-    except Exception as e:
-        logger.exception(f"Error parsing Telegram initData: {e}")
+    except Exception:
+        logger.exception("Error parsing Telegram initData")
         return None
 
 
@@ -79,7 +81,6 @@ async def get_current_user(
     """Extract current user from Telegram initData or Bearer token."""
     telegram_user = None
 
-    # Try Telegram auth
     if x_telegram_init_data:
         telegram_user = _parse_telegram_init_data(x_telegram_init_data)
 
@@ -94,7 +95,6 @@ async def get_current_user(
             )
             return user
 
-    # No auth - return None (anonymous)
     return None
 
 
@@ -118,27 +118,76 @@ class CreateShareRequest(BaseModel):
     visibility: str = "public"
     visible_fields: list = DEFAULT_VISIBLE_FIELDS
     hidden_fields: list = []
-    price_amount: str = "0"
+    price_amount: float = 0
     price_currency: str = "RUB"
     description: str = ""
+
+    @field_validator("visibility")
+    @classmethod
+    def validate_visibility(cls, v):
+        if v not in VALID_VISIBILITIES:
+            raise ValueError(f"Invalid visibility: {v}")
+        return v
+
+    @field_validator("price_amount")
+    @classmethod
+    def validate_price(cls, v):
+        if v < 0:
+            raise ValueError("Price cannot be negative")
+        if v > 1_000_000:
+            raise ValueError("Price too high")
+        return v
+
+    @field_validator("description")
+    @classmethod
+    def validate_description(cls, v):
+        return (v or "")[:500]
 
 
 class UpdateShareRequest(BaseModel):
     visibility: Optional[str] = None
     visible_fields: Optional[list] = None
     hidden_fields: Optional[list] = None
-    price_amount: Optional[str] = None
+    price_amount: Optional[float] = None
     price_currency: Optional[str] = None
     description: Optional[str] = None
+
+    @field_validator("visibility")
+    @classmethod
+    def validate_visibility(cls, v):
+        if v is not None and v not in VALID_VISIBILITIES:
+            raise ValueError(f"Invalid visibility: {v}")
+        return v
+
+    @field_validator("price_amount")
+    @classmethod
+    def validate_price(cls, v):
+        if v is not None and (v < 0 or v > 1_000_000):
+            raise ValueError("Invalid price")
+        return v
 
 
 class PurchaseRequest(BaseModel):
     share_id: str
     provider: str = "free"
 
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v):
+        if v not in VALID_PROVIDERS:
+            raise ValueError(f"Invalid provider: {v}")
+        return v
+
 
 class SubscriptionPayRequest(BaseModel):
     provider: str = "yookassa"
+
+    @field_validator("provider")
+    @classmethod
+    def validate_provider(cls, v):
+        if v not in {"yookassa", "telegram"}:
+            raise ValueError(f"Invalid provider: {v}")
+        return v
 
 
 # ========================
@@ -146,16 +195,19 @@ class SubscriptionPayRequest(BaseModel):
 # ========================
 
 @router.get("/catalog")
-async def get_catalog(limit: int = Query(20, le=50), offset: int = 0):
+async def get_catalog(
+    limit: int = Query(20, ge=1, le=50),
+    offset: int = Query(0, ge=0),
+):
     """Get public shared contacts."""
     async with AsyncSessionLocal() as session:
         sharing_service = SharingService(session)
+        # Uses selectinload(ContactShare.contact) - no N+1
         shares = await sharing_service.get_public_shares(limit=limit, offset=offset)
 
         result = []
-        contact_service = ContactService(session)
         for s in shares:
-            contact = await contact_service.get_contact_by_id(s.contact_id)
+            contact = s.contact
             if not contact:
                 continue
             result.append({
@@ -164,7 +216,7 @@ async def get_catalog(limit: int = Query(20, le=50), offset: int = 0):
                 "contact_company": contact.company,
                 "contact_role": contact.role,
                 "visibility": s.visibility,
-                "price_amount": s.price_amount,
+                "price_amount": float(s.price_amount or 0),
                 "price_currency": s.price_currency,
                 "description": s.description,
                 "view_count": s.view_count,
@@ -212,7 +264,6 @@ async def _build_share_response(session, share, user):
     if can_see_details:
         contact_data = await sharing_service.get_filtered_contact_data(share, contact)
     else:
-        # Basic info only
         contact_data = {}
         for f in ["name", "company", "role", "what_looking_for"]:
             if f in (share.visible_fields or []):
@@ -220,20 +271,18 @@ async def _build_share_response(session, share, user):
                 if val:
                     contact_data[f] = val
 
-    # Update view count
-    current_views = int(share.view_count or "0")
-    share.view_count = str(current_views + 1)
-    await session.commit()
+    # Atomic view count increment
+    await sharing_service.increment_view_count(share.id)
 
     return {
         "id": str(share.id),
         "contact_id": str(share.contact_id),
         "visibility": share.visibility,
-        "price_amount": share.price_amount,
+        "price_amount": float(share.price_amount or 0),
         "price_currency": share.price_currency,
         "description": share.description,
         "visible_fields": share.visible_fields,
-        "view_count": share.view_count,
+        "view_count": share.view_count + 1,
         "purchase_count": share.purchase_count,
         "is_owner": is_owner,
         "already_purchased": already_purchased,
@@ -249,18 +298,18 @@ async def _build_share_response(session, share, user):
 async def get_my_shares(user: User = Depends(require_user)):
     async with AsyncSessionLocal() as session:
         sharing_service = SharingService(session)
+        # Uses selectinload(ContactShare.contact) - no N+1
         shares = await sharing_service.get_user_shares(user.id)
 
-        contact_service = ContactService(session)
         result = []
         for s in shares:
-            contact = await contact_service.get_contact_by_id(s.contact_id)
+            contact = s.contact
             result.append({
                 "id": str(s.id),
                 "contact_id": str(s.contact_id),
                 "contact_name": contact.name if contact else "?",
                 "visibility": s.visibility,
-                "price_amount": s.price_amount,
+                "price_amount": float(s.price_amount or 0),
                 "price_currency": s.price_currency,
                 "visible_fields": s.visible_fields,
                 "view_count": s.view_count,
@@ -274,7 +323,6 @@ async def get_my_shares(user: User = Depends(require_user)):
 @router.post("/my/shares")
 async def create_share(req: CreateShareRequest, user: User = Depends(require_user)):
     async with AsyncSessionLocal() as session:
-        # Check subscription
         sub_service = SubscriptionService(session)
         if not await sub_service.has_seller_access(user.id):
             raise HTTPException(status_code=403, detail="Seller subscription required")
@@ -302,7 +350,7 @@ async def update_share(share_id: str, req: UpdateShareRequest, user: User = Depe
         if not share or share.owner_id != user.id:
             raise HTTPException(status_code=404, detail="Share not found")
 
-        updates = req.dict(exclude_none=True)
+        updates = req.model_dump(exclude_none=True)
         if "visible_fields" in updates:
             await sharing_service.update_field_visibility(
                 share.id, updates["visible_fields"], updates.get("hidden_fields", [])
@@ -310,11 +358,12 @@ async def update_share(share_id: str, req: UpdateShareRequest, user: User = Depe
         if "visibility" in updates:
             share.visibility = updates["visibility"]
         if "price_amount" in updates:
-            share.price_amount = updates["price_amount"]
+            from decimal import Decimal
+            share.price_amount = Decimal(str(updates["price_amount"]))
         if "price_currency" in updates:
             share.price_currency = updates["price_currency"]
         if "description" in updates:
-            share.description = updates["description"]
+            share.description = (updates["description"] or "")[:500]
         await session.commit()
 
     return {"status": "ok"}
@@ -337,8 +386,8 @@ async def delete_share(share_id: str, user: User = Depends(require_user)):
 
 @router.get("/my/contacts")
 async def get_my_contacts(
-    limit: int = Query(50, le=100),
-    offset: int = 0,
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
     user: User = Depends(require_user),
 ):
     async with AsyncSessionLocal() as session:
@@ -390,24 +439,16 @@ async def get_my_contact(contact_id: str, user: User = Depends(require_user)):
 async def get_my_purchases(user: User = Depends(require_user)):
     async with AsyncSessionLocal() as session:
         sharing_service = SharingService(session)
+        # Uses selectinload for copied_contact and seller - no N+1
         purchases = await sharing_service.get_user_purchases(user.id)
 
         result = []
         for p in purchases:
-            contact_service = ContactService(session)
             contact_name = "?"
-            if p.copied_contact_id:
-                contact = await contact_service.get_contact_by_id(p.copied_contact_id)
-                if contact:
-                    contact_name = contact.name
+            if p.copied_contact:
+                contact_name = p.copied_contact.name or "?"
 
-            # Get seller name
-            seller_name = None
-            if p.seller_id:
-                seller_result = await session.execute(select(User).where(User.id == p.seller_id))
-                seller = seller_result.scalars().first()
-                if seller:
-                    seller_name = seller.name
+            seller_name = p.seller.name if p.seller else None
 
             result.append({
                 "id": str(p.id),
@@ -415,7 +456,7 @@ async def get_my_purchases(user: User = Depends(require_user)):
                 "contact_name": contact_name,
                 "seller_name": seller_name,
                 "copied_contact_id": str(p.copied_contact_id) if p.copied_contact_id else None,
-                "amount_paid": p.amount_paid,
+                "amount_paid": float(p.amount_paid or 0),
                 "currency": p.currency,
                 "created_at": p.created_at.isoformat() if p.created_at else None,
             })
@@ -431,16 +472,19 @@ async def purchase_contact(req: PurchaseRequest, user: User = Depends(require_us
         if not share or not share.is_active:
             raise HTTPException(status_code=404, detail="Share not found")
 
+        if share.owner_id == user.id:
+            raise HTTPException(status_code=400, detail="Cannot purchase your own contact")
+
         if await sharing_service.has_purchased(share.id, user.id):
             raise HTTPException(status_code=400, detail="Already purchased")
 
-        price = float(share.price_amount or "0")
+        price = float(share.price_amount or 0)
 
         if req.provider == "free" or price == 0:
             purchase = await sharing_service.purchase_contact(
                 share_id=share.id,
                 buyer_id=user.id,
-                amount_paid="0",
+                amount_paid=0,
                 currency="RUB",
             )
             return {"status": "ok", "purchase_id": str(purchase.id)}
@@ -484,7 +528,7 @@ async def purchase_contact(req: PurchaseRequest, user: User = Depends(require_us
             return {"status": "pending", "confirmation_url": confirmation_url}
 
         else:
-            raise HTTPException(status_code=400, detail=f"Unknown provider: {req.provider}")
+            raise HTTPException(status_code=400, detail="Unknown provider")
 
 
 # ========================
@@ -504,7 +548,7 @@ async def get_subscription(user: User = Depends(require_user)):
             "status": sub.status,
             "plan": sub.plan,
             "provider": sub.provider,
-            "price_amount": str(sub.price_amount),
+            "price_amount": float(sub.price_amount or 0),
             "price_currency": sub.price_currency,
             "period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
         }
@@ -551,10 +595,9 @@ async def create_subscription_payment(req: SubscriptionPayRequest, user: User = 
         return {"status": "pending", "confirmation_url": confirmation_url}
 
     elif req.provider == "telegram":
-        # Telegram Stars - handled by bot, return info
         return {"status": "redirect_to_bot", "message": "Use bot /subscribe for Telegram Stars payment"}
 
-    raise HTTPException(status_code=400, detail=f"Unknown provider: {req.provider}")
+    raise HTTPException(status_code=400, detail="Unknown provider")
 
 
 # ========================
@@ -564,12 +607,10 @@ async def create_subscription_payment(req: SubscriptionPayRequest, user: User = 
 @router.get("/my/profile")
 async def get_profile(user: User = Depends(require_user)):
     async with AsyncSessionLocal() as session:
-        # Contacts count
         contacts_count = (await session.execute(
             select(func.count(Contact.id)).where(Contact.user_id == user.id)
         )).scalar()
 
-        # Shares count
         shares_count = (await session.execute(
             select(func.count(ContactShare.id)).where(
                 ContactShare.owner_id == user.id,
@@ -577,12 +618,10 @@ async def get_profile(user: User = Depends(require_user)):
             )
         )).scalar()
 
-        # Purchases count
         purchases_count = (await session.execute(
             select(func.count(ContactPurchase.id)).where(ContactPurchase.buyer_id == user.id)
         )).scalar()
 
-        # Subscription
         sub_service = SubscriptionService(session)
         sub = await sub_service.get_active_subscription(user.id)
 
@@ -643,7 +682,10 @@ async def webapp_admin_stats(user: User = Depends(require_user)):
 
 
 @router.get("/admin/users")
-async def webapp_admin_users(limit: int = 50, user: User = Depends(require_user)):
+async def webapp_admin_users(
+    limit: int = Query(50, ge=1, le=200),
+    user: User = Depends(require_user),
+):
     if not _is_admin(user):
         raise HTTPException(status_code=403, detail="Admin access required")
 
@@ -665,7 +707,10 @@ async def webapp_admin_users(limit: int = 50, user: User = Depends(require_user)
 
 
 @router.get("/admin/payments")
-async def webapp_admin_payments(limit: int = 50, user: User = Depends(require_user)):
+async def webapp_admin_payments(
+    limit: int = Query(50, ge=1, le=200),
+    user: User = Depends(require_user),
+):
     if not _is_admin(user):
         raise HTTPException(status_code=403, detail="Admin access required")
 

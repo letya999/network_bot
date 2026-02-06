@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, Text, ForeignKey, DateTime, Boolean, Integer, Numeric, func
+from sqlalchemy import Column, String, Text, Index, ForeignKey, DateTime, Boolean, Integer, Numeric, func
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 from app.db.base import Base
@@ -47,3 +47,7 @@ class Subscription(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now(), server_default=func.now())
 
     user = relationship("User", backref="subscriptions")
+
+    __table_args__ = (
+        Index('ix_subscription_user_status', 'user_id', 'status'),
+    )
