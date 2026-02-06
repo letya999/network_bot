@@ -125,6 +125,7 @@ MATERIALS_MENU = "menu_materials"
 NETWORKING_MENU = "menu_net"
 TOOLS_MENU = "menu_tools"
 SETTINGS_MENU = "menu_settings"
+MARKETPLACE_MENU = "menu_marketplace"
 
 async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE, menu_type: str = None):
     """
@@ -198,6 +199,9 @@ async def get_menu_content(user, menu_type, context):
             ],
             [
                 InlineKeyboardButton("🤝 Нетворкинг", callback_data=NETWORKING_MENU)
+            ],
+            [
+                InlineKeyboardButton("🛒 Маркетплейс", callback_data=MARKETPLACE_MENU)
             ],
             [
                 InlineKeyboardButton("🛠 Инструменты", callback_data=TOOLS_MENU),
@@ -278,6 +282,17 @@ async def get_menu_content(user, menu_type, context):
             [InlineKeyboardButton("⬅️ Назад", callback_data=MAIN_MENU)]
         ]
         
+    elif menu_type == MARKETPLACE_MENU:
+        text = "🛒 **Маркетплейс контактов**\n\nПубликация, покупка и обмен контактами."
+        keyboard = [
+            [InlineKeyboardButton("📢 Опубликовать контакт", callback_data="cmd_share_contact")],
+            [InlineKeyboardButton("📋 Мои публикации", callback_data="cmd_my_shares")],
+            [InlineKeyboardButton("🔍 Каталог контактов", callback_data="cmd_browse")],
+            [InlineKeyboardButton("🛍 Мои покупки", callback_data="cmd_my_purchases")],
+            [InlineKeyboardButton("💳 Подписка", callback_data="cmd_subscribe")],
+            [InlineKeyboardButton("⬅️ Назад", callback_data=MAIN_MENU)]
+        ]
+
     elif menu_type == SETTINGS_MENU:
         text = "⚙️ **Настройки**\n\nКонфигурация бота."
         keyboard = [

@@ -129,3 +129,15 @@ ENABLE_AUTO_ENRICHMENT = True
 ENABLE_SEMANTIC_SEARCH = True
 ENABLE_NOTION_SYNC = True
 ENABLE_SHEETS_SYNC = True
+
+# ============================================================================
+# Marketplace & Sharing Constants
+# ============================================================================
+
+MAX_SHARES_PER_USER = 100
+DEFAULT_SHARE_VISIBILITY = "public"
+SUBSCRIPTION_GRACE_PERIOD_DAYS = 3
+SUBSCRIPTION_RENEWAL_REMINDER_DAYS = 3
+PAYMENT_TIMEOUT_MINUTES = 30
+MIN_CONTACT_PRICE_RUB = 0
+MAX_CONTACT_PRICE_RUB = 100000
