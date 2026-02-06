@@ -51,4 +51,27 @@ class Settings(BaseSettings):
     GOOGLE_CLIENT_EMAIL: Optional[str] = None
     GOOGLE_SHEET_ID: Optional[str] = None
 
+    # Payment: YooKassa
+    YOOKASSA_SHOP_ID: Optional[str] = None
+    YOOKASSA_SECRET_KEY: Optional[str] = None
+
+    # Payment: CardPay/Unlimint
+    CARDPAY_API_KEY: Optional[str] = None
+    CARDPAY_MERCHANT_ID: Optional[str] = None
+
+    # Telegram Payments (provider token from BotFather)
+    TELEGRAM_PAYMENT_PROVIDER_TOKEN: Optional[str] = None
+
+    # Subscription pricing (in RUB)
+    SUBSCRIPTION_PRICE_RUB: int = 990
+    SUBSCRIPTION_PRICE_STARS: int = 500
+
+    # Admin telegram IDs (comma-separated)
+    ADMIN_TELEGRAM_IDS: str = ""
+
+    # Webhook & domain (for production)
+    WEBHOOK_URL: Optional[str] = None
+    WEBHOOK_SECRET: Optional[str] = None
+    APP_DOMAIN: Optional[str] = None
+
 settings = Settings()

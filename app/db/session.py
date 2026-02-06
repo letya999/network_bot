@@ -8,9 +8,10 @@ is_dev_mode = os.getenv("ENV", "production").lower() in ["dev", "development", "
 engine = create_async_engine(
     str(settings.DATABASE_URL),
     echo=is_dev_mode,
-    pool_pre_ping=True,  # Verify connections before using
-    pool_size=10,  # Set connection pool size
-    max_overflow=20  # Allow overflow connections
+    pool_pre_ping=True,
+    pool_size=20,
+    max_overflow=10,
+    pool_recycle=3600,
 )
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

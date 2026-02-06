@@ -21,8 +21,27 @@ from app.bot.handlers.assets_handler import (
     ASSET_MENU, ASSET_INPUT_NAME, ASSET_INPUT_CONTENT
 )
 from app.bot.handlers.menu_handlers import (
-    start_menu, menu_callback, 
-    MAIN_MENU, PROFILE_MENU, MATERIALS_MENU, NETWORKING_MENU, TOOLS_MENU, SETTINGS_MENU
+    start_menu, menu_callback,
+    MAIN_MENU, PROFILE_MENU, MATERIALS_MENU, NETWORKING_MENU, TOOLS_MENU, SETTINGS_MENU,
+    MARKETPLACE_MENU
+)
+from app.bot.handlers.sharing_handlers import (
+    share_contact_start, share_contact_setup, share_visibility_cycle,
+    share_fields_menu, share_toggle_field, share_price_set, share_price_input,
+    share_confirm, my_shares, unshare_contact, browse_contacts,
+    browse_view_contact, buy_contact, handle_deep_link_share, my_purchases,
+    SHARE_CONTACT_PREFIX, SHARE_VIS_PREFIX, SHARE_FIELD_PREFIX,
+    SHARE_PRICE_PREFIX, SHARE_CONFIRM_PREFIX, SHARE_TOGGLE_PREFIX,
+    SHARE_UNSHARE_PREFIX, BROWSE_VIEW_PREFIX, BUY_PREFIX,
+)
+from app.bot.handlers.subscription_handlers import (
+    subscribe_command, subscription_callback, handle_pre_checkout,
+    handle_successful_payment, pay_telegram_contact, pay_yookassa_contact,
+    SUB_PREFIX, PAY_TG_PREFIX, PAY_YOOKASSA_PREFIX,
+)
+from app.bot.handlers.admin_handlers import (
+    admin_command, admin_callback, admin_broadcast_send, admin_grant_sub_input,
+    ADMIN_PREFIX,
 )
 from app.bot.handlers.contact_detail_handlers import (
     view_contact, delete_contact_ask, delete_contact_confirm, edit_contact_start, cancel_contact_edit, handle_contact_edit_field,
@@ -109,7 +128,19 @@ async def route_menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return await set_event_mode(update, context)
     elif cmd == "faq":
         return await faq_command(update, context)
-        
+
+    # Marketplace commands
+    elif cmd == "share_contact":
+        return await share_contact_start(update, context)
+    elif cmd == "my_shares":
+        return await my_shares(update, context)
+    elif cmd == "browse":
+        return await browse_contacts(update, context)
+    elif cmd == "my_purchases":
+        return await my_purchases(update, context)
+    elif cmd == "subscribe":
+        return await subscribe_command(update, context)
+
     await query.answer("Option in development...")
 
 async def materials_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -129,6 +160,9 @@ async def post_init(application):
         BotCommand("faq", "📚 FAQ / Instructions"),
         BotCommand("tools", "🛠 Tools"),
         BotCommand("settings", "⚙️ Settings"),
+        BotCommand("browse", "🛒 Каталог контактов"),
+        BotCommand("subscribe", "💳 Подписка"),
+        BotCommand("admin", "🔧 Админ-панель"),
     ]
     await bot.set_my_commands(commands)
     logger.info(f"Bot commands set: {commands}")
@@ -207,7 +241,13 @@ def create_bot():
     app.add_handler(CommandHandler("reset_prompt", reset_prompt))
     app.add_handler(CommandHandler("event", set_event_mode))
     app.add_handler(CommandHandler("sync", sync_command))
-    
+
+    # Marketplace & Sharing
+    app.add_handler(CommandHandler("browse", browse_contacts))
+    app.add_handler(CommandHandler("subscribe", subscribe_command))
+    app.add_handler(CommandHandler("share_contact", share_contact_start))
+    app.add_handler(CommandHandler("admin", admin_command))
+
     # Redirect new menu commands to start_menu (which handles submenus via args or we can dispatch)
     # Actually, we should map them to opening specific menus if possible.
     # start_menu accepts args? No.
@@ -356,8 +396,34 @@ def create_bot():
     app.add_handler(CallbackQueryHandler(export_contact_callback, pattern="^export_"))
     app.add_handler(CallbackQueryHandler(sync_run_callback, pattern="^sync_run_"))
     
+    # --- Sharing & Marketplace Handlers ---
+    app.add_handler(CallbackQueryHandler(share_contact_setup, pattern=f"^{SHARE_CONTACT_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(share_visibility_cycle, pattern=f"^{SHARE_VIS_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(share_fields_menu, pattern=f"^{SHARE_FIELD_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(share_toggle_field, pattern=f"^{SHARE_TOGGLE_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(share_price_set, pattern=f"^{SHARE_PRICE_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(share_confirm, pattern=f"^{SHARE_CONFIRM_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(unshare_contact, pattern=f"^{SHARE_UNSHARE_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(browse_view_contact, pattern=f"^{BROWSE_VIEW_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(buy_contact, pattern=f"^{BUY_PREFIX}"))
+
+    # --- Subscription & Payment Handlers ---
+    app.add_handler(CallbackQueryHandler(subscription_callback, pattern=f"^{SUB_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(pay_telegram_contact, pattern=f"^{PAY_TG_PREFIX}"))
+    app.add_handler(CallbackQueryHandler(pay_yookassa_contact, pattern=f"^{PAY_YOOKASSA_PREFIX}"))
+
+    # Telegram Payments
+    app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, log_update), group=0)
+    from telegram.ext import PreCheckoutQueryHandler
+    app.add_handler(PreCheckoutQueryHandler(handle_pre_checkout))
+    app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, handle_successful_payment))
+
+    # --- Admin Handlers ---
+    app.add_handler(CallbackQueryHandler(admin_callback, pattern=f"^{ADMIN_PREFIX}"))
+
+    # --- Message Handlers (must be last) ---
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.CONTACT, handle_contact))
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_text_message))
-    
+
     return app

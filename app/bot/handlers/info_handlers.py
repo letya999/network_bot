@@ -10,9 +10,19 @@ async def start_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
     Shows the introductory message for the bot.
     Replaces the default /start behavior.
+    Supports deep links: /start share_<token>
     """
     user = update.effective_user
-    
+
+    # Handle deep links
+    if context.args:
+        arg = context.args[0]
+        if arg.startswith("share_"):
+            token = arg[6:]  # Remove "share_" prefix
+            from app.bot.handlers.sharing_handlers import handle_deep_link_share
+            await handle_deep_link_share(update, context, token)
+            return
+
     text = (
         f"👋 Привет, {user.first_name}!\n\n"
         "🤖 <b>Network Bot</b> — твой персональный AI-ассистент для умного нетворкинга.\n\n"

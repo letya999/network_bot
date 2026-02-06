@@ -159,3 +159,13 @@ cython_debug/
 ehthumbs.db
 Thumbs.db
 desktop.ini
+
+# Production
+certbot/
+postgres_data/
+redis_data/
+backup_*.sql.gz
+*.pem
+
+# Environment
+.env
